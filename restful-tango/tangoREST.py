@@ -17,7 +17,7 @@ parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
 from tango import TangoServer
-from tangoObjects import TangoJob, TangoMachine, InputFile
+from tangoObjects import TangoJob, TangoMachine, InputFile, TangoIntValue
 
 from config import Config
 
@@ -35,6 +35,7 @@ class Status:
         self.preallocated = self.create(0, "VMs preallocated")
         self.obtained_pool = self.create(0, "Found pool")
         self.obtained_all_pools = self.create(0, "Found all pools")
+        self.scale_updated = self.create(0, "Scale parameters saved")
 
         self.wrong_key = self.create(-1, "Key not recognized")
         self.wrong_courselab = self.create(-1, "Courselab not found")
@@ -43,6 +44,7 @@ class Status:
         self.invalid_prealloc_size = self.create(-1, "Invalid prealloc size")
         self.pool_not_found = self.create(-1, "Pool not found")
         self.prealloc_failed = self.create(-1, "Preallocate VM failed")
+        self.scale_failed = self.create(-1, "Scale parameters failed to save")
 
     def create(self, id, msg):
         """ create - Constructs a dict with the given ID and message
@@ -72,7 +74,7 @@ class TangoREST:
         )
         self.log = logging.getLogger("TangoREST")
         self.log.info("Starting RESTful Tango server")
-        
+
         self.tango = TangoServer()
         self.status = Status()
 
@@ -400,8 +402,10 @@ class TangoREST:
                 else:
                     self.log.info("Invalid image name: %s" % image)
                     result = self.status.pool_not_found
-            
+
             result["pools"] = pools
+            result["low_water_mark"] = TangoIntValue("low_water_mark", -1).get()
+            result["max_pool_size"] = TangoIntValue("max_pool_size", -1).get()
             return result
         else:
             self.log.info("Key not recognized: %s" % key)
@@ -432,6 +436,21 @@ class TangoREST:
                 return self.status.invalid_image
             self.log.info("Successfully preallocated VMs")
             return self.status.preallocated
+        else:
+            self.log.info("Key not recognized: %s" % key)
+            return self.status.wrong_key
+
+    def scale(self, key, low_water_mark, max_pool_size):
+        """ scale - Set the low water mark and max pool size parameters to control auto-scaling
+        """
+        self.log.debug("Received scale request(%s, %s)" % (low_water_mark, max_pool_size))
+        if self.validateKey(key):
+            ret = self.tango.setScaleParams(low_water_mark, max_pool_size)
+            if ret == -1:
+                self.log.error("Scale failed")
+                return self.status.scale_failed
+            self.log.info("Successfully updated scale params")
+            return self.status.scale_updated
         else:
             self.log.info("Key not recognized: %s" % key)
             return self.status.wrong_key

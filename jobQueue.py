@@ -10,7 +10,7 @@
 import threading, logging, time
 
 from datetime import datetime
-from tangoObjects import TangoDictionary, TangoJob
+from tangoObjects import TangoDictionary, TangoJob, TangoIntValue
 from config import Config
 
 #
@@ -37,6 +37,10 @@ class JobQueue:
         self.preallocator = preallocator
         self.log = logging.getLogger("JobQueue")
         self.nextID = 1
+        self.max_pool_size = TangoIntValue("max_pool_size", -1)
+        if (hasattr(Config, 'MAX_POOL_SIZE') and
+            Config.MAX_POOL_SIZE >= 0):
+            self.max_pool_size.set(Config.MAX_POOL_SIZE)
 
     def _getNextID(self):
         """_getNextID - updates and returns the next ID to be used for a job
@@ -99,7 +103,7 @@ class JobQueue:
         self.queueLock.release()
         self.log.debug("add|Releasing lock to job queue.")
 
-        self.log.info("Added job %s:%d to queue, details = %s" % 
+        self.log.info("Added job %s:%d to queue, details = %s" %
             (job.name, job.id, str(job.__dict__)))
 
         return str(job.id)
@@ -209,8 +213,9 @@ class JobQueue:
 
             # Create or enlarge a pool if there is no free vm to use and
             # the limit for pool is not reached yet
+            max_ps = self.max_pool_size.get()
             if self.preallocator.freePoolSize(job.vm.name) == 0 and \
-                self.preallocator.poolSize(job.vm.name) < Config.POOL_SIZE:
+                self.preallocator.poolSize(job.vm.name) < max_ps:
                 increment = 1
                 if hasattr(Config, 'POOL_ALLOC_INCREMENT') and Config.POOL_ALLOC_INCREMENT:
                     increment = Config.POOL_ALLOC_INCREMENT
@@ -272,7 +277,7 @@ class JobQueue:
             job = self.liveJobs.get(id)
             self.log.info("Terminated job %s:%d: %s" %
                           (job.name, job.id, reason))
-            self.deadJobs.set(id, job)           
+            self.deadJobs.set(id, job)
             self.liveJobs.delete(id)
             job.appendTrace(reason)
         self.queueLock.release()

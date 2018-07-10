@@ -31,8 +31,8 @@ class Config:
 
     # Courselabs directory. Must be created before starting Tango
     COURSELABS = "courselabs"
-    
-    # Directory within each courselab where Tango will copy the output 
+
+    # Directory within each courselab where Tango will copy the output
     # for jobs of that courselab
     OUTPUT_FOLDER = "output"
 
@@ -115,7 +115,7 @@ class Config:
     CREATEVM_SECS = 1
 
     # Default vm pool size
-    POOL_SIZE = 10
+    MAX_POOL_SIZE = 10
 
     # vm pool reserve size.  If set, free pool size is maintained at the level.
     POOL_SIZE_LOW_WATER_MARK = 5  # optional, can be None

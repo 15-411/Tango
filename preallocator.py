@@ -25,6 +25,10 @@ class Preallocator:
         self.nextID = TangoIntValue("nextID", 1000)
         self.vmms = vmms
         self.log = logging.getLogger("Preallocator-" + str(os.getpid()))
+        self.low_water_mark = TangoIntValue("low_water_mark", -1)
+        if (hasattr(Config, 'POOL_SIZE_LOW_WATER_MARK') and
+            Config.POOL_SIZE_LOW_WATER_MARK >= 0):
+            self.low_water_mark.set(Config.POOL_SIZE_LOW_WATER_MARK)
 
     def poolSize(self, vmName):
         """ poolSize - returns the size of the vmName pool, for external callers
@@ -63,8 +67,8 @@ class Preallocator:
         to be preallocated.
 
         This function is called via the TangoServer HTTP interface.
-        It will validate the request,update the machine list, and 
-        then spawn child threads to do the creation and destruction 
+        It will validate the request,update the machine list, and
+        then spawn child threads to do the creation and destruction
         of machines as necessary.
         """
         self.lock.acquire()
@@ -121,7 +125,7 @@ class Preallocator:
         self.machines.set(vm.name, machine)
         self.lock.release()
 
-    def freeVM(self, vm):
+    def freeVM(self, vm, jobQueue):
         """ freeVM - Returns a VM instance to the free list
         """
         # Sanity check: Return a VM to the free list only if it is
@@ -130,11 +134,10 @@ class Preallocator:
         should_destroy = False
         self.lock.acquire()
         if vm and vm.id in self.machines.get(vm.name)[0]:
-            if (hasattr(Config, 'POOL_SIZE_LOW_WATER_MARK') and
-                Config.POOL_SIZE_LOW_WATER_MARK >= 0 and
-                vm.name in self.machines.keys() and
-                self.freePoolSize(vm.name) >= Config.POOL_SIZE_LOW_WATER_MARK):
-                self.log.info("freeVM: over low water mark. will destroy %s" % vm.id)
+            lwm = self.low_water_mark.get()
+            if (lwm >= 0 and vm.name in self.machines.keys() and
+                self.poolSize(vm.name) - jobQueue.getInfo()['size'] > lwm):
+                self.log.info("freeVM: over low water mark (%d). will destroy %s" % (lwm, vm.id))
                 should_destroy = True
             else:
                 machine = self.machines.get(vm.name)

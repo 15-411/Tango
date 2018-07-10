@@ -44,6 +44,8 @@ pool_help = 'Obtain information about a pool of VMs spawned from a specific imag
 parser.add_argument('--pool', action='store_true', help=pool_help)
 prealloc_help = 'Create a pool of instances spawned from a specific image. Must specify key with -k. Modify defaults with --image (autograding_image), --num (2), --vmms (localDocker), --cores (1), and --memory (512).'
 parser.add_argument('--prealloc', action='store_true', help=prealloc_help)
+scale_help = 'Update the scale parameters for the VM pool'
+parser.add_argument('--scale', action='store_true', help=scale_help)
 
 parser.add_argument('--runJob', help='Run a job from a specific directory')
 parser.add_argument(
@@ -91,6 +93,9 @@ parser.add_argument(
 parser.add_argument(
     '--accessKey', default='',
     help='AWS account access key content')
+
+parser.add_argument('--min', default=0, type=int, help='The low water mark for the number of instances')
+parser.add_argument('--max', default=2, type=int, help='The maximum number of instances allowed to run concurrently')
 
 
 def checkKey():
@@ -194,10 +199,10 @@ def tango_addJob():
         requestObj['max_kb'] = args.maxsize
         requestObj['output_file'] = args.outputFile
         requestObj['jobName'] = args.jobname
-        
+
         if (args.notifyURL):
             requestObj['notifyURL'] = args.notifyURL
-        
+
         requestObj['accessKeyId'] = args.accessKeyId
         requestObj['accessKey'] = args.accessKey
 
@@ -330,6 +335,27 @@ def tango_prealloc():
         sys.exit(0)
 
 
+def tango_scale():
+    try:
+        res = checkKey()
+        if res != 0:
+            raise Exception("Invalid usage: [prealloc] " + prealloc_help)
+        response = requests.post(
+            'http://%s:%d/scale/%s/%s/%s/' %
+            (args.server,
+             args.port,
+             args.key,
+             args.min,
+             args.max))
+        print "Sent request to %s:%d/scale/%s/%s/%s/" % (args.server, args.port, args.key, args.min, args.max)
+        print response.content
+
+    except Exception as err:
+        print "Failed to send request to %s:%d/scale/%s/%s/%s/" % (args.server, args.port, args.key, args.min, args.max)
+        print (str(err))
+        sys.exit(0)
+
+
 def file_to_dict(file):
     if "Makefile" in file:
         return {"localFile": file, "destFile": "Makefile"}
@@ -389,6 +415,8 @@ def router():
         tango_prealloc()
     elif (args.runJob):
         tango_runJob()
+    elif (args.scale):
+        tango_scale()
 
 #
 # Parse the command line arguments
@@ -396,7 +424,8 @@ def router():
 args = parser.parse_args()
 if (not args.open and not args.upload and not args.addJob
         and not args.poll and not args.info and not args.jobs
-        and not args.pool and not args.prealloc and not args.runJob):
+        and not args.pool and not args.prealloc and not args.runJob
+        and not args.scale):
     parser.print_help()
     sys.exit(0)
 

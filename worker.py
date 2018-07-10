@@ -52,7 +52,7 @@ class Worker(threading.Thread):
             self.vmms.safeDestroyVM(self.job.vm)
         elif return_vm:
             # put vm into free pool.  may destroy it if free pool is over low water mark
-            self.preallocator.freeVM(self.job.vm)
+            self.preallocator.freeVM(self.job.vm, self.jobQueue)
         else:
             self.vmms.safeDestroyVM(self.job.vm)
             if replace_vm:

@@ -122,6 +122,13 @@ class PreallocHandler(tornado.web.RequestHandler):
         """ post - Handles the post request to prealloc."""
         return tangoREST.prealloc(key, image, num, self.request.body)
 
+class ScaleHandler(tornado.web.RequestHandler):
+
+    @unblock
+    def post(self, key, low_water_mark, max_pool_size):
+        """ post - Handles the post request to scale."""
+        return tangoREST.scale(key, low_water_mark, max_pool_size)
+
 # Routes
 application = tornado.web.Application([
     (r"/", MainHandler),
@@ -134,6 +141,7 @@ application = tornado.web.Application([
     (r"/jobs/(%s)/(%s)/" % (SHA1_KEY, DEADJOBS), JobsHandler),
     (r"/pool/(%s)/" % (SHA1_KEY), PoolHandler),
     (r"/prealloc/(%s)/(%s)/(%s)/" % (SHA1_KEY, IMAGE, NUM), PreallocHandler),
+    (r"/scale/(%s)/(%s)/(%s)/" % (SHA1_KEY, NUM, NUM), ScaleHandler)
 ])
 
 
