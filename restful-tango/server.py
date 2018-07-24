@@ -129,6 +129,14 @@ class ScaleHandler(tornado.web.RequestHandler):
         """ post - Handles the post request to scale."""
         return tangoREST.scale(key, low_water_mark, max_pool_size)
 
+
+class CancelHandler(tornado.web.RequestHandler):
+
+    @unblock
+    def post(self, key, courseLab, outputFile):
+        """ post - Handles the post request to cancel."""
+        return tangoREST.cancel(key, courseLab, outputFile)
+
 # Routes
 application = tornado.web.Application([
     (r"/", MainHandler),
@@ -141,7 +149,8 @@ application = tornado.web.Application([
     (r"/jobs/(%s)/(%s)/" % (SHA1_KEY, DEADJOBS), JobsHandler),
     (r"/pool/(%s)/" % (SHA1_KEY), PoolHandler),
     (r"/prealloc/(%s)/(%s)/(%s)/" % (SHA1_KEY, IMAGE, NUM), PreallocHandler),
-    (r"/scale/(%s)/(%s)/(%s)/" % (SHA1_KEY, NUM, NUM), ScaleHandler)
+    (r"/scale/(%s)/(%s)/(%s)/" % (SHA1_KEY, NUM, NUM), ScaleHandler),
+    (r"/cancel/(%s)/(%s)/(%s)/" % (SHA1_KEY, COURSELAB, OUTPUTFILE), CancelHandler),
 ])
 
 

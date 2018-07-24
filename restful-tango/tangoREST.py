@@ -30,6 +30,7 @@ class Status:
         self.file_uploaded = self.create(0, "Uploaded file")
         self.file_exists = self.create(0, "File exists")
         self.job_added = self.create(0, "Job added")
+        self.job_cancelled = self.create(0, "Job cancelled")
         self.obtained_info = self.create(0, "Found info successfully")
         self.obtained_jobs = self.create(0, "Found list of jobs")
         self.preallocated = self.create(0, "VMs preallocated")
@@ -42,6 +43,7 @@ class Status:
         self.out_not_found = self.create(-1, "Output file not found")
         self.invalid_image = self.create(-1, "Invalid image name")
         self.invalid_prealloc_size = self.create(-1, "Invalid prealloc size")
+        self.job_cancellation_failed = self.create(-2, "Job cancellation failed")
         self.pool_not_found = self.create(-1, "Pool not found")
         self.prealloc_failed = self.create(-1, "Preallocate VM failed")
         self.scale_failed = self.create(-1, "Scale parameters failed to save")
@@ -451,6 +453,27 @@ class TangoREST:
                 return self.status.scale_failed
             self.log.info("Successfully updated scale params")
             return self.status.scale_updated
+        else:
+            self.log.info("Key not recognized: %s" % key)
+            return self.status.wrong_key
+
+    def cancel(self, key, courseLab, outputFile):
+        """ cancel - Cancel the job with output file outputfile.
+        """
+        self.log.debug("Received cancel request(%s, %s)" % (key, outputFile))
+        if self.validateKey(key):
+            """
+	    TODO: Actually cancel the worker; don't just delete from the
+            job queue. Also we should probably verify that the job belongs
+            to the provided key.
+            """
+            ret = -1
+            # Is this the idiom? IS THIS THE IDIOM???
+            if ret == -1:
+                self.log.error("No job was found with output file %s, so no job was cancelled." % outputFile)
+                return self.status.job_cancellation_failed
+            self.log.info("Successfully cancelled job with output file %s" % outputFile)
+            return self.status.job_cancelled
         else:
             self.log.info("Key not recognized: %s" % key)
             return self.status.wrong_key
