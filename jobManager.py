@@ -109,14 +109,13 @@ class JobManager:
                     job.appendTrace("Dispatched job %s:%d [try %d]" %
                                     (job.name, job.id, job.retries))
 
-                    worker = Worker(
+                    Worker(
                         job,
                         vmms,
                         self.jobQueue,
                         self.preallocator,
                         preVM
-                    )
-                    worker.start()
+                    ).start()
 
                 except Exception as err:
                     if job is not None:
