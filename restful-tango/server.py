@@ -133,9 +133,9 @@ class ScaleHandler(tornado.web.RequestHandler):
 class CancelHandler(tornado.web.RequestHandler):
 
     @unblock
-    def post(self, key, courseLab, outputFile):
+    def post(self, key, courselab, outputFile):
         """ post - Handles the post request to cancel."""
-        return tangoREST.cancel(key, courseLab, outputFile)
+        return tangoREST.cancel(key, courselab, outputFile)
 
 # Routes
 application = tornado.web.Application([
