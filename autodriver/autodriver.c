@@ -419,25 +419,25 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     switch (key) {
     case 'u':
         if (parse_uint(arg, &arguments->nproc) < 0) {
-            argp_failure(state, EXIT_USAGE, 0, 
+            argp_failure(state, EXIT_USAGE, 0,
                 "The argument to nproc must be a nonnegative integer");
         }
         break;
     case 'f':
         if (parse_uint(arg, &arguments->fsize) < 0) {
-            argp_failure(state, EXIT_USAGE, 0, 
+            argp_failure(state, EXIT_USAGE, 0,
                 "The argument to fsize must be a nonnegative integer");
         }
         break;
     case 't':
         if (parse_uint(arg, &arguments->timeout) < 0) {
-            argp_failure(state, EXIT_USAGE, 0, 
+            argp_failure(state, EXIT_USAGE, 0,
                 "The argument to timeout must be a nonnegative integer");
         }
         break;
     case 'o':
         if (parse_uint(arg, &arguments->osize) < 0) {
-            argp_failure(state, EXIT_USAGE, 0, 
+            argp_failure(state, EXIT_USAGE, 0,
                 "The argument to osize must be a nonnegative integer");
         }
         break;
@@ -483,7 +483,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 static int call_program(char *path, char *argv[]) {
     pid_t pid;
     int status;
-    
+
     if ((pid = fork()) < 0) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
@@ -504,7 +504,7 @@ static int call_program(char *path, char *argv[]) {
  */
 static void setup_dir(void) {
     // Move the directory over to the user we're running as's home directory
-    char *mv_args[] = {"/bin/mv", "-f", args.directory, 
+    char *mv_args[] = {"/bin/mv", "-f", args.directory,
         args.user_info.pw_dir, NULL};
     if (call_program("/bin/mv", mv_args) != 0) {
         ERROR("Moving directory");
@@ -610,7 +610,7 @@ static void cleanup(void) {
     // We are currently in ~user.
     // (Note by @mpandya: the find binary is in /bin in RHEL but in /usr/bin
     // in Ubuntu)
-    char *find_args[] = {"find", "/usr/bin/find", ".", "/tmp", "/var/tmp", "-user", 
+    char *find_args[] = {"find", "/usr/bin/find", ".", "/tmp", "/var/tmp", "-user",
         args.user_info.pw_name, "-delete", NULL};
     if (call_program("/usr/bin/env", find_args) != 0) {
         ERROR("Deleting user's files");
@@ -739,6 +739,20 @@ static void run_job(void) {
         exit(EXIT_OSERROR);
     }
 
+    if (clearenv() < 0) {
+        ERROR_ERRNO("Clearing environment variables");
+        exit(EXIT_OSERROR);
+    }
+
+    char *home = calloc(strlen("/home/") + strlen(GRADING_USER) + 1, 1);
+    sprintf(home, "/home/%s", GRADING_USER);
+    if (setenv("USER", GRADING_USER, 1) < 0
+            || setenv("HOME", home, 1) < 0) {
+        ERROR_ERRNO("Setting USER and HOME environment variables");
+        exit(EXIT_OSERROR);
+    }
+    free(home);
+
     // Redirect output
     int fd = child_output_fd;
 
@@ -796,7 +810,7 @@ int main(int argc, char **argv) {
     }
 
     struct argp_option options[] = {
-        {"nproc", 'u', "number", 0, 
+        {"nproc", 'u', "number", 0,
             "Limit the number of processes the user is allowed", 0},
         {"fsize", 'f', "size", 0,
             "Limit the maximum file size a user can create (bytes)", 0},
@@ -811,7 +825,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0, 0, 0}
     };
 
-    struct argp parser = {options, parse_opt, "DIRECTORY", 
+    struct argp parser = {options, parse_opt, "DIRECTORY",
         "Manages autograding jobs", NULL, NULL, NULL};
 
     argp_parse(&parser, argc, argv, 0, NULL, &args);
