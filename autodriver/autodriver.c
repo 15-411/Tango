@@ -532,7 +532,7 @@ static void setup_dir(void) {
 	    ERROR("Removing directory");
 	    exit(EXIT_OSERROR);
 	}
-	exit(EXIT_USAGE);
+	exit(0);
     }
 
     // Move the directory over to the user we're running as's home directory
