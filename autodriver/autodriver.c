@@ -38,6 +38,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 // How autodriver works:
 //
@@ -503,6 +504,32 @@ static int call_program(char *path, char *argv[]) {
  *  current directory
  */
 static void setup_dir(void) {
+    if (chdir(args.directory) < 0) {
+        ERROR_ERRNO("Changing directories");
+        exit(EXIT_OSERROR);
+    }
+
+    char *make_args[] = {"make", "setup", NULL};
+    bool should_abort = false;
+    if (call_program("/usr/bin/make", make_args) != 0) {
+	ERROR("Running setup");
+	should_abort = true;
+    }
+
+    if (chdir("..") < 0) {
+        ERROR_ERRNO("Changing directories");
+        exit(EXIT_OSERROR);
+    }
+
+    if (should_abort) {
+	char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
+	if (call_program("/bin/rm", rm_args) != 0) {
+		ERROR("Removing directory");
+		exit(EXIT_OSERROR);
+	}
+	exit(EXIT_USAGE);
+    }
+
     // Move the directory over to the user we're running as's home directory
     char *mv_args[] = {"/bin/mv", "-f", args.directory,
         args.user_info.pw_dir, NULL};
