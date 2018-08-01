@@ -514,6 +514,11 @@ static void setup_dir(void) {
     if (call_program("/usr/bin/make", make_args) != 0) {
 	ERROR("Running setup");
 	should_abort = true;
+	char *make_args2[] = {"make", "clean", NULL};
+	if (call_program("/usr/bin/make", make_args2) != 0) {
+	    ERROR("Running make clean");
+	    exit(EXIT_OSERROR);
+	}
     }
 
     if (chdir("..") < 0) {
@@ -524,8 +529,8 @@ static void setup_dir(void) {
     if (should_abort) {
 	char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
 	if (call_program("/bin/rm", rm_args) != 0) {
-		ERROR("Removing directory");
-		exit(EXIT_OSERROR);
+	    ERROR("Removing directory");
+	    exit(EXIT_OSERROR);
 	}
 	exit(EXIT_USAGE);
     }
