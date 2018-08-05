@@ -115,9 +115,11 @@ class TangoServer:
           1. The job with the specified output file does not exist
           2. the job with the specified output file has finished running normally
           3. The job with the specified output file has been cancelled
+          4. The job was found, and it's running, but cancellation failed.
         In case 1, -1 is returned.
                 2, -2 is returned.
                 3,  0 is returned.
+                4, -3 is returned.
         """
         self.log.error("Received cancelJobWithPath(%s) request" % (outFilePath))
 
@@ -142,8 +144,7 @@ class TangoServer:
         elif job_status == JobQueue.JobStatus.DEAD:
             return -2
         elif job_status == JobQueue.JobStatus.RUNNING:
-            self.killUntilJobComplete(id, job)
-            return 0
+            return self.killUntilJobComplete(id, job)
         else:
            assert job_status == JobQueue.JobStatus.WAITING
            # In this case, findRemovingLive has moved the live job to the dead
@@ -157,13 +158,19 @@ class TangoServer:
         complete. It tries to help by repeatedly `pkill`ing the process. But
         a compliant implementation could just block until the job completes
         on its own.
+
+        On success, returns 0; on failure, return -3 (compliant w above method)
         """
         self.log.debug("Received killUntilJobComplete request")
 
         vm = job.vm
-        while self.jobQueue.isLive(id):
+        for _ in xrange(0, Config.CANCEL_RETRIES):
             # Uh, wait a few seconds, I guess.
             self.preallocator.vmms[vm.vmms].kill(vm, Config.CANCEL_TIMEOUT)
+            if not self.jobQueue.isLive(id):
+              return 0
+
+        return -3
 
     def getJobs(self, item):
         """ getJobs - Return the list of live jobs (item == 0) or the
