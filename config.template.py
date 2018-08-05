@@ -100,6 +100,9 @@ class Config:
     # How many times to reschedule a failed job
     JOB_RETRIES = 2
 
+    # How many times to try to cancel a job
+    CANCEL_RETRIES = 2
+
     # How many times to attempt an SSH connection
     SSH_RETRIES = 5
 

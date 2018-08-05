@@ -475,6 +475,9 @@ class TangoREST:
             elif ret == -2:
                 self.log.error("The job found with output file %s had already completed, so no job was cancelled." % outputFile)
                 return self.status.job_cancellation_spurious
+            elif ret == -3:
+                self.log.error("The job found with output file %s could not be cancelled" % outputFile)
+                return self.status.job_cancellation_failed
             self.log.info("Successfully cancelled job with output file %s" % outputFile)
             return self.status.job_cancelled
         else:

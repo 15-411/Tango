@@ -157,7 +157,7 @@ class JobQueue:
         DEAD = 3
 
     def findRemovingWaiting(self, p):
-        """ findRemovingLive - find the first job that fulfills the predicate,
+        """ findRemovingWaiting - find the first job that fulfills the predicate,
         favoring the latest-created live job. If the found job is live but
         unrun ("waiting"), move it from the live queue to the dead queue. Always
         return the status of the found job.
