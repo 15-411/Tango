@@ -13,7 +13,10 @@ autodriver: $(OBJS)
 
 autodriver.o: autodriver.c
 
+install:
+	cp -p autodriver /usr/bin/autodriver
+
 clean:
 	rm -f *.o autodriver
 
-.PHONY: clean
+.PHONY: clean install
