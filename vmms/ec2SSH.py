@@ -27,15 +27,17 @@ logging.getLogger('boto').setLevel(logging.CRITICAL)
 logging.getLogger('boto3').setLevel(logging.CRITICAL)
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
 
-def timeout(command, time_out=1):
+def timeout(command, time_out=1, stdout=None):
     """ timeout - Run a unix command with a timeout. Return -1 on
     timeout, otherwise return the return value from the command, which
     is typically 0 for success, 1-255 for failure.
     """
+    if stdout == None:
+        stdout = open("/dev/null", "w")
 
     # Launch the command
     p = subprocess.Popen(command,
-                         stdout=open("/dev/null", 'w'),
+                         stdout=stdout,
                          stderr=subprocess.STDOUT)
 
     # Wait for the command to complete
@@ -411,17 +413,17 @@ class Ec2SSH:
 
         return 0
 
-    def sshWithTimeout(self, vm, runcmd, runTimeout):
+    def sshWithTimeout(self, vm, runcmd, runTimeout, stdout=None):
         domain_name = self.domainName(vm)
         account = "%s@%s" % (config.Config.EC2_USER_NAME, domain_name)
-        return timeout(["ssh"] + self.ssh_flags + [account] + runcmd, runTimeout)
+        return timeout(["ssh"] + self.ssh_flags + [account] + runcmd, runTimeout, stdout)
 
     def kill(self, vm, runTimeout):
         self.log.debug("kill: Killing job on VM %s" % self.instanceName(vm.id, vm.name))
         # --wait flag means that this will block until all processes die.
         return self.sshWithTimeout(vm, ["/usr/bin/killall", "--wait", "-INT", "autodriver"], runTimeout)
 
-    def runJob(self, vm, runTimeout, maxOutputFileSize):
+    def runJob(self, vm, runTimeout, maxOutputFileSize, outputFileName):
         """ runJob - Run the make command on a VM using SSH and
         redirect output to file "output".
         """
@@ -441,11 +443,15 @@ class Ec2SSH:
         if hasattr(config.Config, 'AUTODRIVER_TIMESTAMP_INTERVAL') and \
            config.Config.AUTODRIVER_TIMESTAMP_INTERVAL:
           runcmd = runcmd + ("-i %d " % config.Config.AUTODRIVER_TIMESTAMP_INTERVAL)
-        runcmd = runcmd + "autolab &> output"
+        runcmd = runcmd + "autolab 2>&1 | tee output"
+        self.log.debug("runcmd is: %s" % runcmd)
 
         # runTimeout * 2 is a conservative estimate.
         # autodriver handles timeout on the target vm.
-        return self.sshWithTimeout(vm, [runcmd], runTimeout * 2)
+        outfile = open(outputFileName, "w")
+        ret = self.sshWithTimeout(vm, [runcmd], runTimeout * 2,
+                      stdout=outfile)
+        return ret
 
     def copyOut(self, vm, destFile):
         """ copyOut - Copy the file output on the VM to the file
@@ -561,7 +567,7 @@ class Ec2SSH:
         return False
 
     def getImages(self):
-        """ getImages - return a constant; actually use the ami specified in config 
+        """ getImages - return a constant; actually use the ami specified in config
         """
         self.log.info("getImages: %s" % str(list(self.img2ami.keys())))
         return list(self.img2ami.keys())

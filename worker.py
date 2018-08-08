@@ -86,15 +86,14 @@ class Worker(threading.Thread):
 
             self.appendMsg(
                 hdrfile,
-                "Internal error: Unable to complete job after %d tries. Pleae resubmit" %
+                "Internal error: Unable to complete job after %d tries. Please resubmit" %
                 (Config.JOB_RETRIES))
             self.appendMsg(
                 hdrfile,
-                "Job status: waitVM=%s copyIn=%s runJob=%s copyOut=%s" %
+                "Job status: waitVM=%s copyIn=%s runJob=%s" %
                 (ret["waitvm"],
                  ret["copyin"],
-                    ret["runjob"],
-                    ret["copyout"]))
+                    ret["runjob"]))
 
             self.catFiles(hdrfile, self.job.outputFile)
             self.detachVM(return_vm=False, replace_vm=True)
@@ -180,7 +179,6 @@ class Worker(threading.Thread):
             ret["waitvm"] = None
             ret["copyin"] = None
             ret["runjob"] = None
-            ret["copyout"] = None
 
             self.log.debug("Run worker")
             vm = None
@@ -241,16 +239,10 @@ class Worker(threading.Thread):
             # Run the job on the virtual machine
             self.jobLogAndTrace("running on VM", vm)
             ret["runjob"] = self.vmms.runJob(
-                vm, self.job.timeout, self.job.maxOutputFileSize)
+                vm, self.job.timeout, self.job.maxOutputFileSize, self.job.outputFile)
             self.jobLogAndTrace("running on VM", vm, ret["runjob"])
-            # runjob may have failed. but go on with copyout to get the output if any
 
-            # Copy the output back, even if runjob has failed
-            self.jobLogAndTrace("copying from VM", vm)
-            ret["copyout"] = self.vmms.copyOut(vm, self.job.outputFile)
-            self.jobLogAndTrace("copying from VM", vm, ret["copyout"])
-
-            # handle failure(s) of runjob and/or copyout.  runjob error takes priority.
+            # handle failure(s) of runjob.
             if ret["runjob"] != 0:
                 Config.runjob_errors += 1
                 if ret["runjob"] == 1:  # This should never happen
@@ -273,9 +265,6 @@ class Worker(threading.Thread):
                 else:  # This should never happen
                     msg = "Error: Unknown autodriver error (status=%d)" % (
                         ret["runjob"])
-            elif ret["copyout"] != 0:
-                Config.copyout_errors += 1
-                msg += "Error: Copy out from VM failed (status=%d)" % (ret["copyout"])
             else:
                 msg = "Success: Autodriver returned normally"
 
