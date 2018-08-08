@@ -619,6 +619,15 @@ static void cleanup(void) {
 }
 
 /**
+ * @brief Signal handler--compatible signal declaration.
+ */
+static void cleanup_hndlr(int sig) {
+    (void) sig; // This puts sig into the void.
+    cleanup();
+    exit(1); // Bye
+}
+
+/**
  * @brief Monitors the progression of the child
  *
  * SIGCHLD must be blocked when this function is called.
@@ -833,6 +842,11 @@ int main(int argc, char **argv) {
     sigemptyset(&sigset);
     sigaddset(&sigset, SIGCHLD);
     sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+    // On job cancellation, Tango sends SIGINT to the autograding process.
+    // What better to do than call cleanup?
+    // signal(SIGINT, cleanup_hndlr);
+    (void) cleanup_hndlr;
 
     // output file is written by the child process while running the test.
     // It's created here before forking, because the timestamp thread needs
