@@ -594,6 +594,7 @@ static void cleanup(void) {
     // Kill all of the user's processes
     int ret;
     int try = 0;
+    MESSAGE("Running cleanup");
     // Send a SIGINT first, and give it a couple of seconds
     ret = kill_processes("-INT");
     while (ret == 0) {
@@ -845,8 +846,7 @@ int main(int argc, char **argv) {
 
     // On job cancellation, Tango sends SIGINT to the autograding process.
     // What better to do than call cleanup?
-    // signal(SIGINT, cleanup_hndlr);
-    (void) cleanup_hndlr;
+    signal(SIGINT, cleanup_hndlr);
 
     // output file is written by the child process while running the test.
     // It's created here before forking, because the timestamp thread needs
