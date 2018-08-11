@@ -69,7 +69,7 @@ class Config:
     COPYIN_TIMEOUT = 30
     RUNJOB_TIMEOUT = 60
     COPYOUT_TIMEOUT = 30
-    CANCEL_TIMEOUT = 30
+    CANCEL_TIMEOUT = 60
 
     # time zone and timestamp report interval for autodriver execution
     # both are optional.

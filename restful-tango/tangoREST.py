@@ -16,7 +16,7 @@ currentdir = os.path.dirname(
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-from tango import TangoServer
+from tango import TangoServer, CancellationStatus
 from tangoObjects import TangoJob, TangoMachine, InputFile, TangoIntValue
 
 from config import Config
@@ -43,8 +43,9 @@ class Status:
         self.out_not_found = self.create(-1, "Output file not found")
         self.invalid_image = self.create(-1, "Invalid image name")
         self.invalid_prealloc_size = self.create(-1, "Invalid prealloc size")
-        self.job_cancellation_failed = self.create(-2, "Job cancellation failed")
+        self.job_cancellation_failed_not_found = self.create(-2, "Job cancellation failed because the job was not found")
         self.job_cancellation_spurious = self.create(-3, "Job cancellation failed because job already completed")
+        self.job_cancellation_failed = self.create(-4, "Job cancellation failed")
         self.pool_not_found = self.create(-1, "Pool not found")
         self.prealloc_failed = self.create(-1, "Preallocate VM failed")
         self.scale_failed = self.create(-1, "Scale parameters failed to save")
@@ -468,14 +469,13 @@ class TangoREST:
         if self.validateKey(key):
             outFilePath = self.getOutFilePath(key, courselab, outputFile)
             ret = self.tango.cancelJobWithPath(outFilePath)
-            # Is this the idiom? IS THIS THE IDIOM???
-            if ret == -1:
+            if ret == CancellationStatus.NOT_FOUND:
                 self.log.error("No job was found with output file %s, so no job was cancelled." % outputFile)
-                return self.status.job_cancellation_failed
-            elif ret == -2:
+                return self.status.job_cancellation_failed_not_found
+            elif ret == CancellationStatus.ALREADY_COMPLETED:
                 self.log.error("The job found with output file %s had already completed, so no job was cancelled." % outputFile)
                 return self.status.job_cancellation_spurious
-            elif ret == -3:
+            elif ret == CancellationStatus.FAILED:
                 self.log.error("The job found with output file %s could not be cancelled" % outputFile)
                 return self.status.job_cancellation_failed
             self.log.info("Successfully cancelled job with output file %s" % outputFile)
