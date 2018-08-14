@@ -101,10 +101,10 @@ char * getTimestamp(time_t t) {
 #define BUFSIZE         1024
 
 /* Number of time we'll try to kill the grading user's processes */
-#define MAX_KILL_ATTEMPTS   3
+#define MAX_KILL_ATTEMPTS   5
 
 /* Number of seconds to wait in between pkills */
-#define SHUTDOWN_GRACE_TIME 1
+#define SHUTDOWN_GRACE_TIME 3
 
 /**
  * @brief A structure containing all of the user-configurable settings
