@@ -663,7 +663,7 @@ static void cleanup_hndlr(int sig) {
     (void) sig; // This puts sig into the void.
     MESSAGE("Received cancellation request from user.");
     cleanup();
-    exit(1); // Bye
+    exit(0); // Bye
 }
 
 /**
@@ -734,15 +734,6 @@ static int monitor_child(pid_t child) {
 
     cleanup();
     exit(killed ? EXIT_TIMEOUT : EXIT_SUCCESS);
-}
-
-/**
- * @brief Signal handler--compatible signal declaration.
- */
-static void cleanup_hndlr(int sig) {
-    (void) sig; // This puts sig into the void.
-    cleanup();
-    exit(1); // Bye
 }
 
 /**
@@ -904,10 +895,6 @@ int main(int argc, char **argv) {
     sigemptyset(&sigset);
     sigaddset(&sigset, SIGCHLD);
     sigprocmask(SIG_BLOCK, &sigset, NULL);
-
-    // On job cancellation, Tango sends SIGINT to the autograding process.
-    // What better to do than call cleanup?
-    signal(SIGINT, cleanup_hndlr);
 
     // output file is written by the child process while running the test.
     // It's created here before forking, because the timestamp thread needs
