@@ -101,10 +101,10 @@ char * getTimestamp(time_t t) {
 #define BUFSIZE         1024
 
 /* Number of time we'll try to kill the grading user's processes */
-#define MAX_KILL_ATTEMPTS   5
+#define MAX_KILL_ATTEMPTS   3
 
 /* Number of seconds to wait in between pkills */
-#define SHUTDOWN_GRACE_TIME 3
+#define SHUTDOWN_GRACE_TIME 1
 
 /**
  * @brief A structure containing all of the user-configurable settings
@@ -481,7 +481,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
  * @arg path Path to program to run
  * @arg argv NULL terminated array of arguments
  */
-static int call_program(char *path, char *argv[]) {
+static int call_program(char *path, char *argv[], char* name) {
     pid_t pid;
     int status;
 
@@ -489,6 +489,12 @@ static int call_program(char *path, char *argv[]) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
     } else if (pid == 0) {
+        if (name) {
+            char filename[50];
+            int fd = open(filename, O_WRONLY, O_CREAT);
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+        }
         execv(path, argv);
         ERROR_ERRNO("Unable to exec");
         exit(EXIT_OSERROR);
@@ -511,11 +517,11 @@ static void setup_dir(void) {
 
     char *make_args[] = {"make", "setup", NULL};
     bool should_abort = false;
-    if (call_program("/usr/bin/make", make_args) != 0) {
+    if (call_program("/usr/bin/make", make_args, NULL) != 0) {
 	ERROR("Running setup");
 	should_abort = true;
 	char *make_args2[] = {"make", "clean", NULL};
-	if (call_program("/usr/bin/make", make_args2) != 0) {
+	if (call_program("/usr/bin/make", make_args2, NULL) != 0) {
 	    ERROR("Running make clean");
 	    exit(EXIT_OSERROR);
 	}
@@ -528,7 +534,7 @@ static void setup_dir(void) {
 
     if (should_abort) {
 	char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
-	if (call_program("/bin/rm", rm_args) != 0) {
+	if (call_program("/bin/rm", rm_args, NULL) != 0) {
 	    ERROR("Removing directory");
 	    exit(EXIT_OSERROR);
 	}
@@ -538,7 +544,7 @@ static void setup_dir(void) {
     // Move the directory over to the user we're running as's home directory
     char *mv_args[] = {"/bin/mv", "-f", args.directory,
         args.user_info.pw_dir, NULL};
-    if (call_program("/bin/mv", mv_args) != 0) {
+    if (call_program("/bin/mv", mv_args, NULL) != 0) {
         ERROR("Moving directory");
         exit(EXIT_OSERROR);
     }
@@ -553,7 +559,7 @@ static void setup_dir(void) {
     char owner[100];
     sprintf(owner, "%d:%d", args.user_info.pw_uid, args.user_info.pw_gid);
     char *chown_args[] = {"/bin/chown", "-R", owner, args.directory, NULL};
-    if (call_program("/bin/chown", chown_args) != 0) {
+    if (call_program("/bin/chown", chown_args, NULL) != 0) {
         ERROR("Chowning directory");
         exit(EXIT_OSERROR);
     }
@@ -610,7 +616,7 @@ static int kill_processes(char *sig) {
     char *pkill_args[] = {"/usr/bin/pkill", sig, "-u",
         GRADING_USER, NULL};
 
-    if ((ret = call_program("/usr/bin/pkill", pkill_args)) > 1) {
+    if ((ret = call_program("/usr/bin/pkill", pkill_args, "/tmp/pkill.log")) > 1) {
         ERROR("Killing user processes");
         // don't quit.  Let the caller decide
     }
@@ -644,10 +650,20 @@ static void cleanup(void) {
     // in Ubuntu)
     char *find_args[] = {"find", "/usr/bin/find", ".", "/tmp", "/var/tmp", "-user",
         args.user_info.pw_name, "-delete", NULL};
-    if (call_program("/usr/bin/env", find_args) != 0) {
+    if (call_program("/usr/bin/env", find_args, NULL) != 0) {
         ERROR("Deleting user's files");
         exit(EXIT_OSERROR);
     }
+}
+
+/**
+ * @brief Signal handler--compatible signal declaration.
+ */
+static void cleanup_hndlr(int sig) {
+    (void) sig; // This puts sig into the void.
+    MESSAGE("Received cancellation request from user.");
+    cleanup();
+    exit(1); // Bye
 }
 
 /**
@@ -914,6 +930,10 @@ int main(int argc, char **argv) {
     } else if (pid == 0) {
         run_job();
     } else {
+        // On job cancellation, Tango sends SIGINT to the autograding process.
+        // What better to do than call cleanup?
+        signal(SIGINT, cleanup_hndlr);
+
         if (close(child_output_fd) < 0) {
             ERROR_ERRNO("Closing output file by parent process");
             // don't quit for this type of error

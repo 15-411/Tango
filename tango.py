@@ -44,6 +44,11 @@ from jobManager import JobManager
 from tangoObjects import TangoJob
 from config import Config
 
+class CancellationStatus:
+    SUCCEEDED = 0
+    NOT_FOUND = 1
+    FAILED = 2
+    ALREADY_COMPLETED = 3
 
 class TangoServer:
 
@@ -109,9 +114,76 @@ class TangoServer:
         self.log.debug("Received delJob(%d, %d) request" % (id, deadjob))
         return self.jobQueue.delJob(id, deadjob)
 
+    def cancelJobWithPath(self, outFilePath):
+        """ cancelJobWithPath - when this function returns, one of the following
+        is true:
+          1. The job with the specified output file does not exist
+          2. the job with the specified output file has finished running normally
+          3. The job with the specified output file has been cancelled
+          4. The job was found, and it's running, but cancellation failed.
+<<<<<<< HEAD
+        In case 1, NOT_FOUND is returned.
+                2, ALREADY_COMPLETED is returned.
+                3, SUCCEEDED is returned.
+                4, FAILED is returned.
+        """
+        self.log.debug("Received cancelJobWithPath(%s) request" % (outFilePath))
+
+        livejobs = []
+        deadjobs = []
+
+        for (i, j) in self.jobQueue.liveJobs.iteritems():
+            livejobs.append(j.outputFile)
+
+        for (i, j) in self.jobQueue.deadJobs.iteritems():
+            deadjobs.append(j.outputFile)
+
+        def hasThePathWeWant(job):
+           return job.outputFile == outFilePath
+
+        id, job, job_status = self.jobQueue.findRemovingWaiting(hasThePathWeWant)
+        self.log.debug("cancelJobWithPath: Found a job %s with status %s" %
+          (job, job_status))
+
+        if job_status == JobQueue.JobStatus.NOT_FOUND:
+            return CancellationStatus.NOT_FOUND
+        elif job_status == JobQueue.JobStatus.DEAD:
+            return CancellationStatus.ALREADY_COMPLETED
+        elif job_status == JobQueue.JobStatus.RUNNING:
+            return self.killUntilJobComplete(id, job)
+        else:
+           assert job_status == JobQueue.JobStatus.WAITING
+           # In this case, findRemovingLive has moved the live job to the dead
+           # queue, and we have nothing to worry about.
+           return CancellationStatus.SUCCEEDED
+
+    def killUntilJobComplete(self, id, job):
+        """ Here's the contract:
+        If the job is currently running (i.e. it could complete at some point
+        in the future), then this method will return only when the job is
+        complete. It tries to help by repeatedly `pkill`ing the process. But
+        a compliant implementation could just block until the job completes
+        on its own.
+
+        On success, returns SUCCEEDED;
+        on failure, return FAILED (compliant w above method)
+        """
+        self.log.debug("Received killUntilJobComplete request")
+
+        vm = job.vm
+        for _ in xrange(0, Config.CANCEL_RETRIES):
+            # Uh, wait a few seconds, I guess.
+            self.preallocator.vmms[vm.vmms].kill(vm, Config.CANCEL_TIMEOUT)
+            if not self.jobQueue.isLive(id):
+              return CancellationStatus.SUCCEEDED
+
+        return CancellationStatus.FAILED
+
     def getJobs(self, item):
         """ getJobs - Return the list of live jobs (item == 0) or the
         list of dead jobs (item == -1).
+
+        ^ You gotta be kidding me. Is this an API for number lovers.
         """
         try:
             self.log.debug("Received getJobs(%s) request" % (item))

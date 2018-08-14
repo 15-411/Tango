@@ -411,11 +411,20 @@ class Ec2SSH:
 
         return 0
 
+    def sshWithTimeout(self, vm, runcmd, runTimeout):
+        domain_name = self.domainName(vm)
+        account = "%s@%s" % (config.Config.EC2_USER_NAME, domain_name)
+        return timeout(["ssh"] + self.ssh_flags + [account] + runcmd, runTimeout)
+
+    def kill(self, vm, runTimeout):
+        self.log.debug("kill: Killing job on VM %s" % self.instanceName(vm.id, vm.name))
+        # --wait flag means that this will block until all processes die.
+        return self.sshWithTimeout(vm, ["/usr/bin/killall", "--wait", "-INT", "autodriver"], runTimeout)
+
     def runJob(self, vm, runTimeout, maxOutputFileSize):
         """ runJob - Run the make command on a VM using SSH and
         redirect output to file "output".
         """
-        domain_name = self.domainName(vm)
         self.log.debug("runJob: Running job on VM %s" %
                        self.instanceName(vm.id, vm.name))
 
@@ -436,9 +445,7 @@ class Ec2SSH:
 
         # runTimeout * 2 is a conservative estimate.
         # autodriver handles timeout on the target vm.
-        ret = timeout(["ssh"] + self.ssh_flags +
-                       ["%s@%s" % (config.Config.EC2_USER_NAME, domain_name), runcmd], runTimeout * 2)
-        return ret
+        return self.sshWithTimeout(vm, [runcmd], runTimeout * 2)
 
     def copyOut(self, vm, destFile):
         """ copyOut - Copy the file output on the VM to the file

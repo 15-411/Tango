@@ -69,6 +69,7 @@ class Config:
     COPYIN_TIMEOUT = 30
     RUNJOB_TIMEOUT = 60
     COPYOUT_TIMEOUT = 30
+    CANCEL_TIMEOUT = 60
 
     # time zone and timestamp report interval for autodriver execution
     # both are optional.
@@ -98,6 +99,9 @@ class Config:
 
     # How many times to reschedule a failed job
     JOB_RETRIES = 2
+
+    # How many times to try to cancel a job
+    CANCEL_RETRIES = 2
 
     # How many times to attempt an SSH connection
     SSH_RETRIES = 5

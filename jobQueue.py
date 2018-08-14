@@ -150,6 +150,54 @@ class JobQueue:
             self.log.error("Job %s not found in queue" % id)
         return status
 
+    class JobStatus:
+        NOT_FOUND = 0
+        WAITING = 1
+        RUNNING = 2
+        DEAD = 3
+
+    def findRemovingWaiting(self, p):
+        """ findRemovingWaiting - find the first job that fulfills the predicate,
+        favoring the latest-created live job. If the found job is live but
+        unrun ("waiting"), move it from the live queue to the dead queue. Always
+        return the status of the found job.
+        """
+        def firstSatisfying(jobCandidates, status):
+            goodCandidates = [(id, j) for (id, j) in jobCandidates if p(j)]
+            if len(goodCandidates) > 0:
+                id, job = goodCandidates[0]
+                return id, job, status
+            return None, None, JobQueue.JobStatus.NOT_FOUND
+
+        self.queueLock.acquire()
+
+        # Get live jobs in time order, but then reverse when iterating.
+        liveJobs = reversed(sorted(self.liveJobs.iteritems(), key = lambda (_, j): j.tm))
+        liveJobs = list(liveJobs) # I hate python
+
+        def getWaitingJob():
+            liveWaitingJobs = [(id, j) for (id, j) in liveJobs if not j.assigned]
+            return firstSatisfying(liveWaitingJobs, JobQueue.JobStatus.WAITING)
+
+        def getRunningJob():
+            liveAssignedJobs = [(id, j) for (id, j) in liveJobs if j.assigned]
+            return firstSatisfying(liveAssignedJobs, JobQueue.JobStatus.RUNNING)
+
+        def getDeadJob():
+            return firstSatisfying(self.deadJobs.iteritems(), JobQueue.JobStatus.DEAD)
+
+        id, job, status = getWaitingJob()
+        if job == None:
+            id, job, status = getRunningJob()
+        if job == None:
+            id, job, status = getDeadJob()
+
+        if status == JobQueue.JobStatus.WAITING:
+            self.makeDeadUnsafe(id, "Requested by findRemovingLabel")
+
+        self.queueLock.release()
+        return id, job, status
+
     def delJob(self, id, deadjob):
         """ delJob - Implements delJob() interface call
         @param id - The id of the job to remove
@@ -174,6 +222,12 @@ class JobQueue:
             else:
                 self.log.error("Job %s not found in dead queue" % id)
             return status
+    
+    def isLive(self, id):
+        self.queueLock.acquire()
+        isLive = self.liveJobs.get(id)
+        self.queueLock.release()
+        return isLive
 
     def get(self, id):
         """get - retrieve job from live queue
@@ -270,6 +324,13 @@ class JobQueue:
         self.log.info("makeDead| Making dead job ID: " + str(id) + " " + reason)
         self.queueLock.acquire()
         self.log.debug("makeDead| Acquired lock to job queue.")
+        status = self.makeDeadUnsafe(id, reason)
+        self.queueLock.release()
+        self.log.debug("makeDead| Released lock to job queue.")
+        return status
+
+    # Thread unsafe version of makeDead that acquires no locks.
+    def makeDeadUnsafe(self, id, reason):
         status = -1
         if str(id) in self.liveJobs.keys():
             self.log.info("makeDead| Found job ID: %d in the live queue" % (id))
@@ -280,8 +341,6 @@ class JobQueue:
             self.deadJobs.set(id, job)
             self.liveJobs.delete(id)
             job.appendTrace(reason)
-        self.queueLock.release()
-        self.log.debug("makeDead| Released lock to job queue.")
         return status
 
     def getInfo(self):

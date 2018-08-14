@@ -16,7 +16,7 @@ currentdir = os.path.dirname(
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-from tango import TangoServer
+from tango import TangoServer, CancellationStatus
 from tangoObjects import TangoJob, TangoMachine, InputFile, TangoIntValue
 
 from config import Config
@@ -30,6 +30,7 @@ class Status:
         self.file_uploaded = self.create(0, "Uploaded file")
         self.file_exists = self.create(0, "File exists")
         self.job_added = self.create(0, "Job added")
+        self.job_cancelled = self.create(0, "Job cancelled")
         self.obtained_info = self.create(0, "Found info successfully")
         self.obtained_jobs = self.create(0, "Found list of jobs")
         self.preallocated = self.create(0, "VMs preallocated")
@@ -42,6 +43,9 @@ class Status:
         self.out_not_found = self.create(-1, "Output file not found")
         self.invalid_image = self.create(-1, "Invalid image name")
         self.invalid_prealloc_size = self.create(-1, "Invalid prealloc size")
+        self.job_cancellation_failed_not_found = self.create(-2, "Job cancellation failed because the job was not found")
+        self.job_cancellation_spurious = self.create(-3, "Job cancellation failed because job already completed")
+        self.job_cancellation_failed = self.create(-4, "Job cancellation failed")
         self.pool_not_found = self.create(-1, "Pool not found")
         self.prealloc_failed = self.create(-1, "Preallocate VM failed")
         self.scale_failed = self.create(-1, "Scale parameters failed to save")
@@ -104,6 +108,12 @@ class TangoREST:
         labPath = self.getDirPath(key, courselab)
         return "%s/%s" % (labPath, self.OUTPUT_FOLDER)
 
+    def getOutFilePath(self, key, courselab, outFile):
+        """ getOutFilePath - Compute output file name.
+        """
+        outPath = self.getOutPath(key, courselab)
+        return "%s/%s" % (outPath, outFile)
+
     def checkFileExists(self, directory, filename, fileMD5):
         """ checkFileExists - Checks if a file exists in a
             directory
@@ -130,15 +140,14 @@ class TangoREST:
             disk=None,
             network=None)
 
-    def convertJobObj(self, dirName, jobObj):
+    def convertJobObj(self, key, courselab, jobObj):
         """ convertJobObj - Converts a dictionary into a TangoJob object
         """
 
         name = jobObj['jobName']
-        outputFile = "%s/%s/%s/%s" % (self.COURSELABS,
-                                      dirName,
-                                      self.OUTPUT_FOLDER,
-                                      jobObj['output_file'])
+        dirPath = self.getDirPath(key, courselab)
+        outputFile = self.getOutFilePath(key, courselab, jobObj['output_file'])
+
         timeout = jobObj['timeout']
         notifyURL = None
         maxOutputFileSize = Config.MAX_OUTPUT_FILE_SIZE
@@ -151,7 +160,7 @@ class TangoREST:
             inFile = file['localFile']
             vmFile = file['destFile']
             handinfile = InputFile(
-                localFile="%s/%s/%s" % (self.COURSELABS, dirName, inFile),
+                localFile="%s/%s" % (dirPath, inFile),
                 destFile=vmFile)
             input.append(handinfile)
 
@@ -303,10 +312,9 @@ class TangoREST:
         self.log.debug("Received addJob request(%s, %s, %s)" %
                        (key, courselab, jobStr))
         if (self.validateKey(key)):
-            labName = self.getDirName(key, courselab)
             try:
                 jobObj = json.loads(jobStr)
-                job = self.convertJobObj(labName, jobObj)
+                job = self.convertJobObj(key, courselab, jobObj)
                 jobId = self.tango.addJob(job)
                 self.log.debug("Done adding job")
                 if (jobId == -1):
@@ -332,12 +340,11 @@ class TangoREST:
         self.log.debug("Received poll request(%s, %s, %s)" %
                        (key, courselab, outputFile))
         if (self.validateKey(key)):
-            outputPath = self.getOutPath(key, courselab)
-            outfilePath = "%s/%s" % (outputPath, outputFile)
-            if os.path.exists(outfilePath):
+            outFilePath = self.getOutFilePath(key, courselab, outputFile)
+            if os.path.exists(outFilePath):
                 self.log.info("Output file (%s, %s, %s) found" %
                               (key, courselab, outputFile))
-                output = open(outfilePath)
+                output = open(outFilePath)
                 result = output.read()
                 output.close()
                 return result
@@ -451,6 +458,28 @@ class TangoREST:
                 return self.status.scale_failed
             self.log.info("Successfully updated scale params")
             return self.status.scale_updated
+        else:
+            self.log.info("Key not recognized: %s" % key)
+            return self.status.wrong_key
+
+    def cancel(self, key, courselab, outputFile):
+        """ cancel - Cancel the job with output file outputfile.
+        """
+        self.log.debug("Received cancel request(%s, %s)" % (key, outputFile))
+        if self.validateKey(key):
+            outFilePath = self.getOutFilePath(key, courselab, outputFile)
+            ret = self.tango.cancelJobWithPath(outFilePath)
+            if ret == CancellationStatus.NOT_FOUND:
+                self.log.error("No job was found with output file %s, so no job was cancelled." % outputFile)
+                return self.status.job_cancellation_failed_not_found
+            elif ret == CancellationStatus.ALREADY_COMPLETED:
+                self.log.error("The job found with output file %s had already completed, so no job was cancelled." % outputFile)
+                return self.status.job_cancellation_spurious
+            elif ret == CancellationStatus.FAILED:
+                self.log.error("The job found with output file %s could not be cancelled" % outputFile)
+                return self.status.job_cancellation_failed
+            self.log.info("Successfully cancelled job with output file %s" % outputFile)
+            return self.status.job_cancelled
         else:
             self.log.info("Key not recognized: %s" % key)
             return self.status.wrong_key
