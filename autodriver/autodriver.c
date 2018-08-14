@@ -101,10 +101,10 @@ char * getTimestamp(time_t t) {
 #define BUFSIZE         1024
 
 /* Number of time we'll try to kill the grading user's processes */
-#define MAX_KILL_ATTEMPTS   5
+#define MAX_KILL_ATTEMPTS   3
 
 /* Number of seconds to wait in between pkills */
-#define SHUTDOWN_GRACE_TIME 3
+#define SHUTDOWN_GRACE_TIME 1
 
 /**
  * @brief A structure containing all of the user-configurable settings
@@ -915,12 +915,12 @@ int main(int argc, char **argv) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
     } else if (pid == 0) {
+        run_job();
+    } else {
         // On job cancellation, Tango sends SIGINT to the autograding process.
         // What better to do than call cleanup?
         signal(SIGINT, cleanup_hndlr);
 
-        run_job();
-    } else {
         if (close(child_output_fd) < 0) {
             ERROR_ERRNO("Closing output file by parent process");
             // don't quit for this type of error
