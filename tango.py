@@ -121,6 +121,7 @@ class TangoServer:
           2. the job with the specified output file has finished running normally
           3. The job with the specified output file has been cancelled
           4. The job was found, and it's running, but cancellation failed.
+<<<<<<< HEAD
         In case 1, NOT_FOUND is returned.
                 2, ALREADY_COMPLETED is returned.
                 3, SUCCEEDED is returned.
