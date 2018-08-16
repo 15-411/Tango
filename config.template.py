@@ -75,6 +75,7 @@ class Config:
     # both are optional.
     AUTODRIVER_LOGGING_TIME_ZONE = "UTC"  # e.g. "America/New_York".
     AUTODRIVER_TIMESTAMP_INTERVAL = 0  # in seconds. 0 => no timestamp insersion
+    AUTODRIVER_STREAM = False
 
     # Docker constants
     BOOT2DOCKER_INIT_TIMEOUT = 5
