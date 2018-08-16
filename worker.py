@@ -239,7 +239,7 @@ class Worker(threading.Thread):
             # Run the job on the virtual machine
             self.jobLogAndTrace("running on VM", vm)
             ret["runjob"] = self.vmms.runJob(
-                vm, self.job.timeout, self.job.maxOutputFileSize, self.job.outputFile)
+                vm, self.job.timeout, self.job.maxOutputFileSize, hdrfile, self.job.outputFile)
             self.jobLogAndTrace("running on VM", vm, ret["runjob"])
 
             # handle failure(s) of runjob.
