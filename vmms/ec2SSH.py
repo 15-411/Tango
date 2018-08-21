@@ -425,7 +425,7 @@ class Ec2SSH:
         # --wait flag means that this will block until all processes die.
         return self.sshWithTimeout(vm, ["/usr/bin/killall", "--wait", "-INT", "autodriver"], runTimeout)
 
-    def runJob(self, vm, runTimeout, maxOutputFileSize, hdrFileName, outputFileName):
+    def runJob(self, vm, runTimeout, maxOutputFileSize, hdrFileName, bodyFileName):
         """ runJob - Run the make command on a VM using SSH and
         redirect output to file "output".
         """
@@ -453,10 +453,10 @@ class Ec2SSH:
 
         # runTimeout * 2 is a conservative estimate.
         # autodriver handles timeout on the target vm.
-        outfile = open(outputFileName, "w")
         hdrfile = open(hdrFileName, "a")
+        bodyfile = open(bodyFileName, "w")
         ret = self.sshWithTimeout(vm, [runcmd], runTimeout * 2,
-                      stdout=outfile, stderr=hdrfile)
+                      stdout=bodyfile, stderr=hdrfile)
         return ret
 
     def copyOut(self, vm, destFile):

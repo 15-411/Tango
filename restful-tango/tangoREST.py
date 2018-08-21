@@ -334,13 +334,27 @@ class TangoREST:
             self.log.info("Key not recognized: %s" % key)
             return self.status.wrong_key
 
-    def poll(self, key, courselab, outputFile):
+    def poll(self, key, courselab, outputFile, inprogress):
         """ poll - Poll for the output file in key-courselab
         """
-        self.log.debug("Received poll request(%s, %s, %s)" %
-                       (key, courselab, outputFile))
+        self.log.debug("Received poll request(%s, %s, %s, inprogress=%s)" %
+                       (key, courselab, outputFile, inprogress))
         if (self.validateKey(key)):
             outFilePath = self.getOutFilePath(key, courselab, outputFile)
+
+            hdrfile = outFilePath + ".hdr"
+            bodyfile = outFilePath + ".body"
+            if inprogress and os.path.exists(hdrfile) and os.path.exists(bodyfile):
+                self.log.info("In-progress output files (%s, %s, %s, %s) found" %
+                              (key, courselab, hdrfile, bodyfile))
+                output = open(hdrfile)
+                result = output.read()
+                output.close()
+                result += "In-progress autodriver output from grading VM:\n\n"
+                output = open(bodyfile)
+                result += output.read()
+                output.close()
+                return result
             if os.path.exists(outFilePath):
                 self.log.info("Output file (%s, %s, %s) found" %
                               (key, courselab, outputFile))
