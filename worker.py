@@ -121,7 +121,7 @@ class Worker(threading.Thread):
         and f2 is the output from the Autodriver
         """
         self.appendMsg(f1, "Output of autodriver from grading VM:\n")
-        with open(f3, "a") as f3fd:
+        with open(f3, "w") as f3fd:
             with open(f1, "rb") as f1fd:
                 shutil.copyfileobj(f1fd, f3fd)
             # f2 may not exist if autodriver failed
