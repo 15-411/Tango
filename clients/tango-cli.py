@@ -96,6 +96,7 @@ parser.add_argument(
 
 parser.add_argument('--min', default=0, type=int, help='The low water mark for the number of instances')
 parser.add_argument('--max', default=2, type=int, help='The maximum number of instances allowed to run concurrently')
+parser.add_argument('--inprogress', action='store_true', help='For poll: return in-progress job results if available')
 
 
 def checkKey():
@@ -225,24 +226,26 @@ def tango_addJob():
 
 
 def tango_poll():
+    inprogress = 1 if args.inprogress else 0
     try:
         res = checkKey() + checkCourselab()
         if res != 0:
             raise Exception("Invalid usage: [poll] " + poll_help)
 
         response = requests.get(
-            'http://%s:%d/poll/%s/%s/%s/' %
+            'http://%s:%d/poll/%s/%s/%s/?inprogress=%s' %
             (args.server,
              args.port,
              args.key,
              args.courselab,
              urllib.quote(
-                 args.outputFile)))
-        print "Sent request to %s:%d/poll/%s/%s/%s/" % (args.server, args.port, args.key, args.courselab, urllib.quote(args.outputFile))
+                 args.outputFile),
+             inprogress))
+        print "Sent request to %s:%d/poll/%s/%s/%s/?inprogress=%s" % (args.server, args.port, args.key, args.courselab, urllib.quote(args.outputFile), inprogress)
         print response.content
 
     except Exception as err:
-        print "Failed to send request to %s:%d/poll/%s/%s/%s/" % (args.server, args.port, args.key, args.courselab, urllib.quote(args.outputFile))
+        print "Failed to send request to %s:%d/poll/%s/%s/%s/?inprogress=%s" % (args.server, args.port, args.key, args.courselab, urllib.quote(args.outputFile), inprogress)
         print (str(err))
         sys.exit(0)
 
