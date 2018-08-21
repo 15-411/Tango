@@ -71,18 +71,18 @@ char * getTimestamp(time_t t) {
 }
 
 #define ERROR_ERRNO(format, ...)  \
-  printf("Autodriver@%s: ERROR " format " at line %d: %s\n", \
+  fprintf(stderr, "Autodriver@%s: ERROR " format " at line %d: %s\n", \
          getTimestamp(0), ##__VA_ARGS__, __LINE__, strerror(errno))
 
 #define ERROR(format, ...)  \
-  printf("Autodriver@%s: ERROR " format " at line %d\n", \
+  fprintf(stderr, "Autodriver@%s: ERROR " format " at line %d\n", \
          getTimestamp(0), ##__VA_ARGS__, __LINE__)
 
 #define MESSAGE(format, ...)  \
-  printf("Autodriver@%s: " format "\n", getTimestamp(0), ##__VA_ARGS__)
+  fprintf(stderr, "Autodriver@%s: " format "\n", getTimestamp(0), ##__VA_ARGS__)
 
 #define NL_MESSAGE(format, ...)  \
-  printf("\nAutodriver@%s: " format "\n", getTimestamp(0), ##__VA_ARGS__)
+  fprintf(stderr, "\nAutodriver@%s: " format "\n", getTimestamp(0), ##__VA_ARGS__)
 
 #define EXIT__BASE     1
 
@@ -119,6 +119,7 @@ struct arguments {
     char *directory;
     char *timezone;
     unsigned timestamp_interval;
+    bool stream;
 } args;
 
 unsigned long startTime = 0;
@@ -451,6 +452,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     case 'z':
         args.timezone = arg;
         break;
+    case 's':
+	args.stream = true;
+	break;
     case ARGP_KEY_ARG:
         switch (state->arg_num) {
         case 0:
@@ -481,7 +485,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
  * @arg path Path to program to run
  * @arg argv NULL terminated array of arguments
  */
-static int call_program(char *path, char *argv[], char* name) {
+static int call_program(char *path, char *argv[]) {
     pid_t pid;
     int status;
 
@@ -489,12 +493,7 @@ static int call_program(char *path, char *argv[], char* name) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
     } else if (pid == 0) {
-        if (name) {
-            char filename[50];
-            int fd = open(filename, O_WRONLY, O_CREAT);
-            dup2(fd, STDOUT_FILENO);
-            dup2(fd, STDERR_FILENO);
-        }
+        dup2(STDOUT_FILENO, STDERR_FILENO);
         execv(path, argv);
         ERROR_ERRNO("Unable to exec");
         exit(EXIT_OSERROR);
@@ -517,11 +516,11 @@ static void setup_dir(void) {
 
     char *make_args[] = {"make", "setup", NULL};
     bool should_abort = false;
-    if (call_program("/usr/bin/make", make_args, NULL) != 0) {
+    if (call_program("/usr/bin/make", make_args) != 0) {
 	ERROR("Running setup");
 	should_abort = true;
 	char *make_args2[] = {"make", "clean", NULL};
-	if (call_program("/usr/bin/make", make_args2, NULL) != 0) {
+	if (call_program("/usr/bin/make", make_args2) != 0) {
 	    ERROR("Running make clean");
 	    exit(EXIT_OSERROR);
 	}
@@ -534,7 +533,7 @@ static void setup_dir(void) {
 
     if (should_abort) {
 	char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
-	if (call_program("/bin/rm", rm_args, NULL) != 0) {
+	if (call_program("/bin/rm", rm_args) != 0) {
 	    ERROR("Removing directory");
 	    exit(EXIT_OSERROR);
 	}
@@ -544,7 +543,7 @@ static void setup_dir(void) {
     // Move the directory over to the user we're running as's home directory
     char *mv_args[] = {"/bin/mv", "-f", args.directory,
         args.user_info.pw_dir, NULL};
-    if (call_program("/bin/mv", mv_args, NULL) != 0) {
+    if (call_program("/bin/mv", mv_args) != 0) {
         ERROR("Moving directory");
         exit(EXIT_OSERROR);
     }
@@ -559,7 +558,7 @@ static void setup_dir(void) {
     char owner[100];
     sprintf(owner, "%d:%d", args.user_info.pw_uid, args.user_info.pw_gid);
     char *chown_args[] = {"/bin/chown", "-R", owner, args.directory, NULL};
-    if (call_program("/bin/chown", chown_args, NULL) != 0) {
+    if (call_program("/bin/chown", chown_args) != 0) {
         ERROR("Chowning directory");
         exit(EXIT_OSERROR);
     }
@@ -616,7 +615,7 @@ static int kill_processes(char *sig) {
     char *pkill_args[] = {"/usr/bin/pkill", sig, "-u",
         GRADING_USER, NULL};
 
-    if ((ret = call_program("/usr/bin/pkill", pkill_args, "/tmp/pkill.log")) > 1) {
+    if ((ret = call_program("/usr/bin/pkill", pkill_args)) > 1) {
         ERROR("Killing user processes");
         // don't quit.  Let the caller decide
     }
@@ -650,7 +649,7 @@ static void cleanup(void) {
     // in Ubuntu)
     char *find_args[] = {"find", "/usr/bin/find", ".", "/tmp", "/var/tmp", "-user",
         args.user_info.pw_name, "-delete", NULL};
-    if (call_program("/usr/bin/env", find_args, NULL) != 0) {
+    if (call_program("/usr/bin/env", find_args) != 0) {
         ERROR("Deleting user's files");
         exit(EXIT_OSERROR);
     }
@@ -682,7 +681,7 @@ static int monitor_child(pid_t child) {
 
     // create a thread to track the file size at given time interval
     pthread_t timestampThread = 0;  // this thread needs no cancellation
-    if (args.timestamp_interval > 0) {
+    if (!args.stream && args.timestamp_interval > 0) {
       if (pthread_create(&timestampThread, NULL, timestampFunc, NULL)) {
         ERROR_ERRNO("Failed to create timestamp thread");
         exit(EXIT_OSERROR);
@@ -720,14 +719,14 @@ static int monitor_child(pid_t child) {
         MESSAGE("Job exited with status %d", WEXITSTATUS(status));
     }
 
-    if (args.timestamp_interval > 0) {
+    if (!args.stream && args.timestamp_interval > 0) {
       MESSAGE("Timestamps inserted at %d-second or larger intervals, depending on output rates",
               args.timestamp_interval);
     }
     MESSAGE("Also check end of output for potential errors");
 
     childFinished = 1;
-    dump_output();
+    if (!args.stream) dump_output();
     if (childTimedOut) {
       NL_MESSAGE("ERROR Job timed out");  // print error again at the end of output
     }
@@ -801,21 +800,23 @@ static void run_job(void) {
     }
     free(home);
 
-    // Redirect output
-    int fd = child_output_fd;
+    if (!args.stream) {
+	// Redirect output
+	int fd = child_output_fd;
 
-    if (dup2(fd, STDOUT_FILENO) < 0) {
-        ERROR_ERRNO("Redirecting standard output");
-        exit(EXIT_OSERROR);
+	if (dup2(fd, STDOUT_FILENO) < 0) {
+	    ERROR_ERRNO("Redirecting standard output");
+	    exit(EXIT_OSERROR);
+	}
+
+	if (close(fd) < 0) {
+	    ERROR_ERRNO("Closing output file by child process");
+	    exit(EXIT_OSERROR);
+	}
     }
 
-    if (dup2(fd, STDERR_FILENO) < 0) {
+    if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) {
         ERROR_ERRNO("Redirecting standard error");
-        exit(EXIT_OSERROR);
-    }
-
-    if (close(fd) < 0) {
-        ERROR_ERRNO("Closing output file by child process");
         exit(EXIT_OSERROR);
     }
 
@@ -839,6 +840,7 @@ int main(int argc, char **argv) {
     args.osize = 0;
     args.timestamp_interval = 0;
     args.timezone = NULL;
+    args.stream = false;
     startTime = time(NULL);
 
     // Make sure this isn't being run as root
@@ -870,6 +872,8 @@ int main(int argc, char **argv) {
             "Interval (seconds) for placing timestamps in user output file", 0},
         {"timezone", 'z', "timezone", 0,
             "Timezone setting. Default is UTC", 0},
+	{"stream", 's', "stream", OPTION_ARG_OPTIONAL,
+	    "Stream the autograder output to stdout instead of dumping it all at once", 0},
         {0, 0, 0, 0, 0, 0}
     };
 
@@ -896,18 +900,20 @@ int main(int argc, char **argv) {
     sigaddset(&sigset, SIGCHLD);
     sigprocmask(SIG_BLOCK, &sigset, NULL);
 
-    // output file is written by the child process while running the test.
-    // It's created here before forking, because the timestamp thread needs
-    // read access to it.
-    if ((child_output_fd = open(OUTPUT_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
-                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
-        ERROR_ERRNO("Creating output file");
-        exit(EXIT_OSERROR);
-    }
-    // chown output file to user "autograde"
-    if (fchown(child_output_fd, args.user_info.pw_uid, args.user_info.pw_gid) < 0) {
-        ERROR_ERRNO("Error chowning output file");
-        exit(EXIT_OSERROR);
+    if (!args.stream) {
+	// output file is written by the child process while running the test.
+	// It's created here before forking, because the timestamp thread needs
+	// read access to it.
+	if ((child_output_fd = open(OUTPUT_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
+		       S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
+	    ERROR_ERRNO("Creating output file");
+	    exit(EXIT_OSERROR);
+	}
+	// chown output file to user "autograde"
+	if (fchown(child_output_fd, args.user_info.pw_uid, args.user_info.pw_gid) < 0) {
+	    ERROR_ERRNO("Error chowning output file");
+	    exit(EXIT_OSERROR);
+	}
     }
 
     pid_t pid = fork();
@@ -921,7 +927,7 @@ int main(int argc, char **argv) {
         // What better to do than call cleanup?
         signal(SIGINT, cleanup_hndlr);
 
-        if (close(child_output_fd) < 0) {
+        if (!args.stream && close(child_output_fd) < 0) {
             ERROR_ERRNO("Closing output file by parent process");
             // don't quit for this type of error
         }

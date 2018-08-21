@@ -40,6 +40,13 @@ class Worker(threading.Thread):
     #
     # Worker helper functions
     #
+
+    def getHeaderFile(self, outputFile):
+        return outputFile + ".hdr"
+
+    def getBodyFile(self, outputFile):
+        return outputFile + ".body"
+
     def detachVM(self, return_vm=False, replace_vm=False):
         """ detachVM - Detach the VM from this worker. The options are
         to return it to the pool's free list (return_vm), destroy it
@@ -65,11 +72,14 @@ class Worker(threading.Thread):
             self.log.info("removeVM %s" % self.job.vm.id);
             self.preallocator.removeVM(self.job.vm)
 
-    def rescheduleJob(self, hdrfile, ret, err):
+    def rescheduleJob(self, ret, err):
         """ rescheduleJob - Reschedule a job that has failed because
         of a system error, such as a VM timing out or a connection
         failure.
         """
+
+        hdrfile = self.getHeaderFile(self.job.outputFile)
+        bodyfile = self.getBodyFile(self.job.outputFile)
 
         # Try a few times before giving up
         if self.job.retries < Config.JOB_RETRIES:
@@ -86,17 +96,16 @@ class Worker(threading.Thread):
 
             self.appendMsg(
                 hdrfile,
-                "Internal error: Unable to complete job after %d tries. Pleae resubmit" %
+                "Internal error: Unable to complete job after %d tries. Please resubmit" %
                 (Config.JOB_RETRIES))
             self.appendMsg(
                 hdrfile,
-                "Job status: waitVM=%s copyIn=%s runJob=%s copyOut=%s" %
+                "Job status: waitVM=%s copyIn=%s runJob=%s" %
                 (ret["waitvm"],
                  ret["copyin"],
-                    ret["runjob"],
-                    ret["copyout"]))
+                    ret["runjob"]))
 
-            self.catFiles(hdrfile, self.job.outputFile)
+            self.catFiles(hdrfile, bodyfile, self.job.outputFile)
             self.detachVM(return_vm=False, replace_vm=True)
             self.notifyServer(self.job)
 
@@ -107,25 +116,23 @@ class Worker(threading.Thread):
         f.write("Autolab [%s]: %s\n" % (datetime.now().ctime(), msg))
         f.close()
 
-    def catFiles(self, f1, f2):
-        """ catFiles - cat f1 f2 > f2, where f1 is the Tango header
+    def catFiles(self, f1, f2, f3):
+        """ catFiles - cat f1 f2 > f3, where f1 is the Tango header
         and f2 is the output from the Autodriver
         """
         self.appendMsg(f1, "Output of autodriver from grading VM:\n")
-        (wfd, tmpname)=tempfile.mkstemp(dir=os.path.dirname(f2))
-        wf=os.fdopen(wfd, "a")
-        with open(f1, "rb") as f1fd:
-            shutil.copyfileobj(f1fd, wf)
-        # f2 may not exist if autodriver failed
-        try:
-            with open(f2, "rb") as f2fd:
-                shutil.copyfileobj(f2fd, wf)
-        except IOError:
-            wf.write("NO OUTPUT FILE\n")
+        with open(f3, "a") as f3fd:
+            with open(f1, "rb") as f1fd:
+                shutil.copyfileobj(f1fd, f3fd)
+            # f2 may not exist if autodriver failed
+            try:
+                with open(f2, "rb") as f2fd:
+                    shutil.copyfileobj(f2fd, f3fd)
+            except IOError:
+                wf.write("NO OUTPUT FILE\n")
 
-        wf.close()
-        os.rename(tmpname, f2)
         os.remove(f1)
+        os.remove(f2)
 
     def notifyServer(self, job):
         try:
@@ -144,13 +151,16 @@ class Worker(threading.Thread):
         except Exception as e:
             self.log.debug("Error in notifyServer: %s" % str(e))
 
-    def afterJobExecution(self, hdrfile, msg, vmHandling):
+    def afterJobExecution(self, msg, vmHandling):
       (returnVM, replaceVM) = vmHandling
       self.jobQueue.makeDead(self.job.id, msg)
 
+      hdrfile = self.getHeaderFile(self.job.outputFile)
+      bodyfile = self.getBodyFile(self.job.outputFile)
+
       # Update the text that users see in the autodriver output file
       self.appendMsg(hdrfile, msg)
-      self.catFiles(hdrfile, self.job.outputFile)
+      self.catFiles(hdrfile, bodyfile, self.job.outputFile)
 
       # Thread exit after termination
       self.detachVM(return_vm=returnVM, replace_vm=replaceVM)
@@ -180,13 +190,14 @@ class Worker(threading.Thread):
             ret["waitvm"] = None
             ret["copyin"] = None
             ret["runjob"] = None
-            ret["copyout"] = None
 
             self.log.debug("Run worker")
             vm = None
 
-            # Header message for user
-            hdrfile = tempfile.mktemp()
+            # Set up header and body files
+            hdrfile = self.getHeaderFile(self.job.outputFile)
+            bodyfile = self.getBodyFile(self.job.outputFile)
+
             self.appendMsg(hdrfile, "Received job %s:%d" %
                            (self.job.name, self.job.id))
 
@@ -220,7 +231,6 @@ class Worker(threading.Thread):
             if ret["waitvm"] == -1:
                 Config.waitvm_timeouts += 1
                 self.rescheduleJob(
-                    hdrfile,
                     ret,
                     "Internal error: waitVM timeout after %d secs" %
                     Config.WAITVM_TIMEOUT)
@@ -235,22 +245,16 @@ class Worker(threading.Thread):
             if ret["copyin"] != 0:
                 Config.copyin_errors += 1
                 msg = "Error: Copy in to VM failed (status=%d)" % (ret["copyin"])
-                self.afterJobExecution(hdrfile, msg, (returnVM, replaceVM))
+                self.afterJobExecution(msg, (returnVM, replaceVM))
                 return
 
             # Run the job on the virtual machine
             self.jobLogAndTrace("running on VM", vm)
             ret["runjob"] = self.vmms.runJob(
-                vm, self.job.timeout, self.job.maxOutputFileSize)
+                vm, self.job.timeout, self.job.maxOutputFileSize, hdrfile, bodyfile)
             self.jobLogAndTrace("running on VM", vm, ret["runjob"])
-            # runjob may have failed. but go on with copyout to get the output if any
 
-            # Copy the output back, even if runjob has failed
-            self.jobLogAndTrace("copying from VM", vm)
-            ret["copyout"] = self.vmms.copyOut(vm, self.job.outputFile)
-            self.jobLogAndTrace("copying from VM", vm, ret["copyout"])
-
-            # handle failure(s) of runjob and/or copyout.  runjob error takes priority.
+            # handle failure(s) of runjob.
             if ret["runjob"] != 0:
                 Config.runjob_errors += 1
                 if ret["runjob"] == 1:  # This should never happen
@@ -273,13 +277,10 @@ class Worker(threading.Thread):
                 else:  # This should never happen
                     msg = "Error: Unknown autodriver error (status=%d)" % (
                         ret["runjob"])
-            elif ret["copyout"] != 0:
-                Config.copyout_errors += 1
-                msg += "Error: Copy out from VM failed (status=%d)" % (ret["copyout"])
             else:
                 msg = "Success: Autodriver returned normally"
 
-            self.afterJobExecution(hdrfile, msg, (returnVM, replaceVM))
+            self.afterJobExecution(msg, (returnVM, replaceVM))
             return
 
         #

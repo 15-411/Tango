@@ -84,7 +84,8 @@ class PollHandler(tornado.web.RequestHandler):
     def get(self, key, courselab, outputFile):
         """ get - Handles the get request to poll."""
         self.set_header('Content-Type', 'application/octet-stream')
-        return tangoREST.poll(key, courselab, urllib.unquote(outputFile))
+        inprogress = True if self.get_argument('inprogress', None) == '1' else False
+        return tangoREST.poll(key, courselab, urllib.unquote(outputFile), inprogress)
 
 
 class InfoHandler(tornado.web.RequestHandler):
