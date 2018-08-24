@@ -13,6 +13,8 @@ import os
 import re
 import time
 import logging
+import json
+import math
 
 import config
 
@@ -173,30 +175,35 @@ class Ec2SSH:
     # VMMS helper methods
     #
 
+    def mbytes_to_gib_string(self, mbytes):
+        if mbytes <= 512:
+            return "0.5 GiB"
+        else:
+            gib = float(mbytes)/1024
+            gib = math.pow(2, math.ceil(math.log(gib, 2)))
+            return str(int(gib)) + " GiB"
+
     def tangoMachineToEC2Instance(self, vm):
         """ tangoMachineToEC2Instance - returns an object with EC2 instance
-        type and AMI. Only general-purpose instances are used. Defalt AMI
-        is currently used.
+        type and AMI that best matches the given VM parameters.
         """
         ec2instance = dict()
 
-        memory = vm.memory  # in Kbytes
-        cores = vm.cores
-
-        if (cores == 1 and memory <= 613 * 1024):
-            ec2instance['instance_type'] = 't2.micro'
-        elif (cores == 1 and memory <= 1.7 * 1024 * 1024):
-            ec2instance['instance_type'] = 'm1.small'
-        elif (cores == 1 and memory <= 3.75 * 1024 * 1024):
-            ec2instance['instance_type'] = 'm3.medium'
-        elif (cores == 2):
-            ec2instance['instance_type'] = 'm3.large'
-        elif (cores == 4):
-            ec2instance['instance_type'] = 'm3.xlarge'
-        elif (cores == 8):
-            ec2instance['instance_type'] = 'm3.2xlarge'
-        else:
+        client = boto3.client('pricing', config.Config.EC2_REGION)
+        result = client.get_products(ServiceCode="AmazonEC2", Filters=[
+            {"Type": "TERM_MATCH", "Field": "location", "Value": config.Config.EC2_REGION_LONG},
+            {"Type": "TERM_MATCH", "Field": "termType", "Value": "OnDemand"},
+            {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
+            {"Type": "TERM_MATCH", "Field": "storage", "Value": "EBS only"},
+            {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+            {"Type": "TERM_MATCH", "Field": "memory", "Value": self.mbytes_to_gib_string(vm.memory)},
+            {"Type": "TERM_MATCH", "Field": "vcpu", "Value": str(vm.cores)}
+        ])
+        if not result or len(result['PriceList']) == 0:
             ec2instance['instance_type'] = config.Config.DEFAULT_INST_TYPE
+        else:
+            attrs = json.loads(result['PriceList'][0])['product']['attributes']
+            ec2instance['instance_type'] = attrs['instanceType']
 
         ec2instance['ami'] = self.img2ami[vm.name + ".img"]["ImageId"]
         self.log.info("tangoMachineToEC2Instance: %s" % str(ec2instance))

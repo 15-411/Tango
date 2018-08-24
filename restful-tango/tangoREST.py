@@ -166,7 +166,10 @@ class TangoREST:
             input.append(handinfile)
 
         # VM object
-        vm = self.createTangoMachine(jobObj["image"])
+        if "vm" in jobObj:
+            vm = self.createTangoMachine(jobObj["image"], vmObj=jobObj["vm"])
+        else:
+            vm = self.createTangoMachine(jobObj["image"])
 
         # for backward compatibility
         accessKeyId = None

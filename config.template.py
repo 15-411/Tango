@@ -172,6 +172,7 @@ class Config:
     # of those image names available.
 
     EC2_REGION = ''
+    EC2_REGION_LONG = ''
     EC2_USER_NAME = ''
     DEFAULT_INST_TYPE = ''
     DEFAULT_SECURITY_GROUP = ''
