@@ -71,57 +71,59 @@ class JobManager:
                     # self.log.info("_manage job %s" % jobStr)
                 if not job.accessKey and Config.REUSE_VMS:
                     id, vm = self.jobQueue.getNextPendingJobReuse(id)
-                    job = self.jobQueue.get(id)
+                    if id is None:
+                        job = None
+                    else:
+                        job = self.jobQueue.get(id)
                     if job is not None:
                         jobStr = ', '.join("%s: %s" % item for item in job.__dict__.items())
                         self.log.info("_manage after getNextPendingJobReuse %s" % jobStr)
                     else:
                         self.log.info("_manage after getNextPendingJobReuse %s %s" % (id, vm))
-                try:
-                    # Mark the job assigned
-                    self.jobQueue.assignJob(job.id)
-                    self.log.info("_manage after assignJob %s" % id)
-                    # if the job has specified an account
-                    # create an VM on the account and run on that instance
-                    if job.accessKeyId:
-                        from vmms.ec2SSH import Ec2SSH
-                        vmms = Ec2SSH(job.accessKeyId, job.accessKey)
-                        newVM = copy.deepcopy(job.vm)
-                        newVM.id = self._getNextID()
-                        preVM = vmms.initializeVM(newVM)
-                        self.log.info("_manage init new vm %s" % preVM.id)
-                    else:
-                        # Try to find a vm on the free list and allocate it to
-                        # the worker if successful.
-                        if Config.REUSE_VMS:
-                            preVM = vm
-                            self.log.info("_manage use vm %s" % preVM.id)
+
+                if job is not None:
+                    try:
+                        # Mark the job assigned
+                        self.jobQueue.assignJob(job.id)
+                        self.log.info("_manage after assignJob %s" % id)
+                        # if the job has specified an account
+                        # create an VM on the account and run on that instance
+                        if job.accessKeyId:
+                            from vmms.ec2SSH import Ec2SSH
+                            vmms = Ec2SSH(job.accessKeyId, job.accessKey)
+                            newVM = copy.deepcopy(job.vm)
+                            newVM.id = self._getNextID()
+                            preVM = vmms.initializeVM(newVM)
+                            self.log.info("_manage init new vm %s" % preVM.id)
                         else:
-                            # xxxXXX??? strongly suspect this code path not work.
-                            # After setting REUSE_VMS to False, job submissions don't run.
-                            preVM = self.preallocator.allocVM(job.vm.name)
-                            self.log.info("_manage allocate vm %s" % preVM.id)
-                        vmms = self.vmms[job.vm.vmms]  # Create new vmms object
+                            # Try to find a vm on the free list and allocate it to
+                            # the worker if successful.
+                            if Config.REUSE_VMS:
+                                preVM = vm
+                                self.log.info("_manage use vm %s" % preVM.id)
+                            else:
+                                # xxxXXX??? strongly suspect this code path not work.
+                                # After setting REUSE_VMS to False, job submissions don't run.
+                                preVM = self.preallocator.allocVM(job.vm.name)
+                                self.log.info("_manage allocate vm %s" % preVM.id)
+                            vmms = self.vmms[job.vm.vmms]  # Create new vmms object
 
-                    # Now dispatch the job to a worker
-                    self.log.info("Dispatched job %s:%d to %s [try %d]" %
-                                  (job.name, job.id, preVM.name, job.retries))
-                    job.appendTrace("Dispatched job %s:%d [try %d]" %
-                                    (job.name, job.id, job.retries))
+                        # Now dispatch the job to a worker
+                        self.log.info("Dispatched job %s:%d to %s [try %d]" %
+                                      (job.name, job.id, preVM.name, job.retries))
+                        job.appendTrace("Dispatched job %s:%d [try %d]" %
+                                        (job.name, job.id, job.retries))
 
-                    Worker(
-                        job,
-                        vmms,
-                        self.jobQueue,
-                        self.preallocator,
-                        preVM
-                    ).start()
+                        Worker(
+                            job,
+                            vmms,
+                            self.jobQueue,
+                            self.preallocator,
+                            preVM
+                        ).start()
 
-                except Exception as err:
-                    if job is not None:
+                    except Exception as err:
                         self.jobQueue.makeDead(job.id, str(err))
-                    else:
-                        self.log.info("_manage: job is None")
 
             # Sleep for a bit and then check again
             time.sleep(Config.DISPATCH_PERIOD)

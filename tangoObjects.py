@@ -37,7 +37,7 @@ class InputFile():
         self.destFile = destFile
 
     def __repr__(self):
-        return "InputFile(localFile: %s, destFile: %s)" % (self.localFile, 
+        return "InputFile(localFile: %s, destFile: %s)" % (self.localFile,
                 self.destFile)
 
 
@@ -79,7 +79,7 @@ class TangoJob():
     """
 
     def __init__(self, vm=None,
-                 outputFile=None, name=None, input=None,
+                 outputFile=None, name=None, limitingKey=None, input=None,
                  notifyURL=None, timeout=0,
                  maxOutputFileSize=Config.MAX_OUTPUT_FILE_SIZE,
                  accessKeyId=None, accessKey=None):
@@ -94,6 +94,7 @@ class TangoJob():
 
         self.outputFile = outputFile
         self.name = name
+        self.limitingKey = limitingKey
         self.notifyURL = notifyURL
         self.timeout = timeout
         self.trace = []
@@ -155,6 +156,7 @@ class TangoJob():
         self.input = other_job.input
         self.outputFile = other_job.outputFile
         self.name = other_job.name
+        self.limitingKey = other_job.limitingKey
         self.notifyURL = other_job.notifyURL
         self.timeout = other_job.timeout
         self.trace = other_job.trace

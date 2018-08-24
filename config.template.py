@@ -128,6 +128,9 @@ class Config:
     # Increment step when enlarging vm pool
     POOL_ALLOC_INCREMENT = 2  # can be None, which is treated as 1, the default
 
+    # The maximum number of jobs with the same limitingKey that can run concurrently
+    MAX_CONCURRENT_JOBS = 0
+
     # Optionally log finer-grained timing information
     LOG_TIMING = False
 

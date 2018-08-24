@@ -136,7 +136,7 @@ class Preallocator:
         if vm and vm.id in self.machines.get(vm.name)[0]:
             lwm = self.low_water_mark.get()
             if (lwm >= 0 and vm.name in self.machines.keys() and
-                self.poolSize(vm.name) - jobQueue.getInfo()['size'] > lwm):
+                self.freePoolSize(vm.name) - jobQueue.numReadyJobs() >= lwm):
                 self.log.info("freeVM: over low water mark (%d). will destroy %s" % (lwm, vm.id))
                 should_destroy = True
             else:

@@ -145,6 +145,7 @@ class TangoREST:
         """
 
         name = jobObj['jobName']
+        limitingKey = jobObj['limitingKey']
         dirPath = self.getDirPath(key, courselab)
         outputFile = self.getOutFilePath(key, courselab, jobObj['output_file'])
 
@@ -176,6 +177,7 @@ class TangoREST:
 
         job = TangoJob(
             name=name,
+            limitingKey=limitingKey,
             vm=vm,
             outputFile=outputFile,
             input=input,
@@ -222,6 +224,7 @@ class TangoREST:
         job['retries'] = tangoJobObj.retries
         job['outputFile'] = tangoJobObj.outputFile
         job['name'] = tangoJobObj.name
+        job['limitingKey'] = tangoJobObj.limitingKey
         job['notifyURL'] = tangoJobObj.notifyURL
         job['maxOutputFileSize'] = tangoJobObj.maxOutputFileSize
         job['assigned'] = tangoJobObj.assigned
