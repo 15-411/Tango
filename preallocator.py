@@ -51,13 +51,16 @@ class Preallocator:
         Called by jobQueue to create the pool and allcoate given number of vms
         """
 
+        self.log.debug("incrementPoolSize| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("incrementPoolSize| acquired lock on preallocator")
         if vm.name not in self.machines.keys():
             self.machines.set(vm.name, [[], TangoQueue(vm.name)])
             # see comments in jobManager.py for the same call
             self.machines.get(vm.name)[1].make_empty()
             self.log.debug("Creating empty pool of %s instances" % (vm.name))
         self.lock.release()
+        self.log.debug("incrementPoolSize| released lock on preallocator")
 
         self.log.debug("incrementPoolSize: add %d new %s instances" % (delta, vm.name))
         threading.Thread(target=self.__create(vm, delta)).start()
@@ -71,13 +74,16 @@ class Preallocator:
         then spawn child threads to do the creation and destruction
         of machines as necessary.
         """
+        self.log.debug("update| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("update| acquired lock on preallocator")
         if vm.name not in self.machines.keys():
             self.machines.set(vm.name, [[], TangoQueue(vm.name)])
             # see comments in jobManager.py for the same call
             self.machines.get(vm.name)[1].make_empty()
             self.log.debug("Creating empty pool of %s instances" % (vm.name))
         self.lock.release()
+        self.log.debug("update| released lock on preallocator")
 
         delta = num - len(self.machines.get(vm.name)[0])
         if delta > 0:
@@ -101,12 +107,17 @@ class Preallocator:
         """
         vm = None
         if vmName in self.machines.keys():
+            self.log.debug("allocVM| acquiring lock on preallocator")
             self.lock.acquire()
+            self.log.debug("allocVM| acquired lock on preallocator")
 
         if not self.machines.get(vmName)[1].empty():
+            self.log.debug("allocVM| getting (nowait)")
             vm = self.machines.get(vmName)[1].get_nowait()
+            self.log.debug("allocVM| got (nowait)")
 
         self.lock.release()
+        self.log.debug("allocVM| released lock on " + vmName)
 
         # If we're not reusing instances, then crank up a replacement
         if vm and not Config.REUSE_VMS:
@@ -118,12 +129,15 @@ class Preallocator:
         """ addToFreePool - Returns a VM instance to the free list
         """
 
+        self.log.debug("addToFreePool| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("addToFreePool| acquired lock on preallocator")
         machine = self.machines.get(vm.name)
         self.log.info("addToFreePool: add %s to free pool" % vm.id)
         machine[1].put(vm)
         self.machines.set(vm.name, machine)
         self.lock.release()
+        self.log.debug("addToFreePool| released lock on preallocator")
 
     def freeVM(self, vm, jobQueue):
         """ freeVM - Returns a VM instance to the free list
@@ -132,11 +146,23 @@ class Preallocator:
         # still a member of the pool.
         not_found = False
         should_destroy = False
+
+        # We must access jobQueue prior to acquiring the preallocator lock,
+        # since otherwise we may have deadlock. (In other places in the codebase,
+        # we acquire the lock on the jobQueue and THEN the lock on the
+        # preallocator.)
+        self.log.debug("freeVM| acquiring lock on jobQueue")
+        jobQueue.queueLock.acquire()
+        self.log.debug("freeVM| acquired lock on jobQueue")
+        numReadyJobs = jobQueue.numReadyJobsUnsafe()
+
+        self.log.debug("freeVM| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("freeVM| acquired lock on preallocator")
         if vm and vm.id in self.machines.get(vm.name)[0]:
             lwm = self.low_water_mark.get()
             if (lwm >= 0 and vm.name in self.machines.keys() and
-                self.freePoolSize(vm.name) - jobQueue.numReadyJobs() >= lwm):
+                self.freePoolSize(vm.name) - numReadyJobs >= lwm):
                 self.log.info("freeVM: over low water mark (%d). will destroy %s" % (lwm, vm.id))
                 should_destroy = True
             else:
@@ -148,6 +174,9 @@ class Preallocator:
             self.log.info("freeVM: not found in pool %s.  will destroy %s" % (vm.name, vm.id))
             not_found = True
         self.lock.release()
+        self.log.debug("freeVM| released lock on preallocator")
+        jobQueue.queueLock.release()
+        self.log.debug("freeVM| released lock on jobQueue")
 
         # The VM is no longer in the pool.
         if not_found or should_destroy:
@@ -159,12 +188,15 @@ class Preallocator:
     def addVM(self, vm):
         """ addVM - add a particular VM instance to the pool
         """
+        self.log.debug("addVM| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("addVM| acquired lock on preallocator")
         machine = self.machines.get(vm.name)
         machine[0].append(vm.id)
         self.log.info("addVM: add %s" % vm.id)
         self.machines.set(vm.name, machine)
         self.lock.release()
+        self.log.debug("addVM| released lock on preallocator")
 
     # Note: This function is called from removeVM() to handle the case when a vm
     # is in free pool.  In theory this should never happen but we want to ensure
@@ -172,7 +204,9 @@ class Preallocator:
     # to add/remove a vm from both total and free pools, instead of two disjoint ones.
     def removeFromFreePool(self, vm):
         dieVM = None
+        self.log.debug("removeFromFreePool| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("removeFromFreePool| acquired lock on preallocator")
         size = self.machines.get(vm.name)[1].qsize()
         self.log.info("removeFromFreePool: %s in pool %s" % (vm.id, vm.name))
         for i in range(size):  # go through free pool
@@ -184,11 +218,14 @@ class Preallocator:
                 self.log.info("removeFromFreePool: found %s in pool %s" % (vm.id, vm.name))
                 # don't put this particular vm back to free pool, that is removal
         self.lock.release()
+        self.log.debug("removeFromFreePool| released lock on preallocator")
 
     def removeVM(self, vm):
         """ removeVM - remove a particular VM instance from the pool
         """
+        self.log.debug("removeVM| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("removeVM| acquired lock on preallocator")
         machine = self.machines.get(vm.name)
         if vm.id not in machine[0]:
             self.log.error("removeVM: %s NOT found in pool" % (vm.id, vm.name))
@@ -199,6 +236,7 @@ class Preallocator:
         machine[0].remove(vm.id)
         self.machines.set(vm.name, machine)
         self.lock.release()
+        self.log.debug("removeVM| released lock on preallocator")
 
         self.removeFromFreePool(vm)  # also remove from free pool, just in case
 
@@ -207,7 +245,9 @@ class Preallocator:
         VM.  Preallocated VM's have 4-digit ID numbers between 1000
         and 9999.
         """
+        self.log.debug("_getNextID| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("_getNextID| acquired lock on preallocator")
         id = self.nextID.get()
 
         self.nextID.increment()
@@ -216,6 +256,7 @@ class Preallocator:
             self.nextID.set(1000)
 
         self.lock.release()
+        self.log.debug("_getNextID| released lock on preallocator")
         return id
 
     def __create(self, vm, cnt):
@@ -252,9 +293,12 @@ class Preallocator:
         it's possible we might not be able to satisfy the request if
         the free list is empty.
         """
+        self.log.debug("__destroy| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("__destroy| acquired lock on preallocator")
         dieVM = self.machines.get(vm.name)[1].get_nowait()
         self.lock.release()
+        self.log.debug("__destroy| released lock on preallocator")
 
         if dieVM:
             self.log.info("__destroy: %s" % dieVM.id)
@@ -293,7 +337,9 @@ class Preallocator:
             return -1
 
         dieVM = None
+        self.log.debug("destroyVM| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("destroyVM| acquired lock on preallocator")
         size = self.machines.get(vmName)[1].qsize()
         self.log.info("destroyVM: free:total pool %d:%d" % (size, len(self.machines.get(vmName)[0])))
         if (size == len(self.machines.get(vmName)[0])):
@@ -306,6 +352,7 @@ class Preallocator:
                     self.log.info("destroyVM: will call removeVM %s" % id)
                     dieVM = vm
         self.lock.release()
+        self.log.debug("destroyVM| released lock on preallocator")
 
         if dieVM:
             self.removeVM(dieVM)
@@ -331,7 +378,9 @@ class Preallocator:
         result["total"] = []
         result["free"] = []
         free_list = []
+        self.log.debug("getPool| acquiring lock on preallocator")
         self.lock.acquire()
+        self.log.debug("getPool| acquired lock on preallocator")
         size = self.machines.get(vmName)[1].qsize()
         for i in range(size):
             vm = self.machines.get(vmName)[1].get_nowait()
@@ -340,6 +389,7 @@ class Preallocator:
             machine[1].put(vm)
             self.machines.set(vmName, machine)
         self.lock.release()
+        self.log.debug("getPool| released lock on preallocator")
 
         result["total"] = self.machines.get(vmName)[0]
         result["free"] = free_list

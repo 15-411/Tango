@@ -256,9 +256,7 @@ class JobQueue:
         """getNextPendingJob - Returns ID of next pending job from queue.
         Called by JobManager when Config.REUSE_VMS==False
         """
-        self.log.debug("getNextPendingJob| Acquiring lock to job queue.")
         self.queueLock.acquire()
-        self.log.debug("getNextPendingJob| Acquired lock to job queue.")
         limitingKeys = defaultdict(int)
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
@@ -269,10 +267,8 @@ class JobQueue:
         for id, job in self.liveJobs.iteritems():
             if job.isNotAssigned() and (max_concurrent <= 0 or limitingKeys[job.limitingKey] < max_concurrent):
                 self.queueLock.release()
-                self.log.debug("getNextPendingJob| Released lock to job queue.")
                 return id
         self.queueLock.release()
-        self.log.debug("getNextPendingJob| Released lock to job queue.")
         return None
 
     # Create or enlarge a pool if there is no free vm to use and
@@ -298,6 +294,7 @@ class JobQueue:
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
                 limitingKeys[job.limitingKey] += 1
+        self.log.debug("getNextPendingJobReuse| Done checking limitingKeys")
         max_concurrent = 0
         if hasattr(Config, 'MAX_CONCURRENT_JOBS') and Config.MAX_CONCURRENT_JOBS:
             max_concurrent = Config.MAX_CONCURRENT_JOBS
@@ -309,8 +306,12 @@ class JobQueue:
             # If the job hasn't been assigned to a worker yet, see if there
             # is a free VM
             if job.isNotAssigned() and (max_concurrent <= 0 or limitingKeys[job.limitingKey] < max_concurrent):
+                self.log.debug("getNextPendingJobReuse| Incrementing poolsize if necessary")
                 self.incrementPoolSizeIfNecessary(job)
+                self.log.debug("getNextPendingJobReuse| Done incrementing poolsize if necessary")
+                self.log.debug("getNextPendingJobReuse| Allocating vm")
                 vm = self.preallocator.allocVM(job.vm.name)
+                self.log.debug("getNextPendingJobReuse| Done allocating vm")
                 if vm:
                     self.log.info("getNextPendingJobReuse alloc vm %s to job %s" % (vm, id))
                     self.queueLock.release()
@@ -322,14 +323,12 @@ class JobQueue:
         return (None, None)
 
     # Returns the number of jobs that are ready to be assigned to a VM.
-    def numReadyJobs(self):
+    # NOTE: the client must manually obtain the queueLock before calling this.
+    def numReadyJobsUnsafe(self):
         count = 0
         max_concurrent = 0
         if hasattr(Config, 'MAX_CONCURRENT_JOBS') and Config.MAX_CONCURRENT_JOBS:
             max_concurrent = Config.MAX_CONCURRENT_JOBS
-        self.log.debug("numReadyJobs| Acquiring lock to job queue.")
-        self.queueLock.acquire()
-        self.log.debug("numReadyJobs| Acquired lock to job queue.")
         limitingKeys = defaultdict(int)
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
@@ -337,8 +336,6 @@ class JobQueue:
         for id, job in self.liveJobs.iteritems():
             if job.isNotAssigned() and (max_concurrent <= 0 or limitingKeys[job.limitingKey] < max_concurrent):
                 count += 1
-        self.queueLock.release()
-        self.log.debug("numReadyJobs| Released lock to job queue.")
         return count
 
     def assignJob(self, jobId):
