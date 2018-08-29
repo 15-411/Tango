@@ -170,7 +170,9 @@ class JobQueue:
                 return id, job, status
             return None, None, JobQueue.JobStatus.NOT_FOUND
 
+        self.log.debug("findRemovingWaiting|Acquiring lock to job queue.")
         self.queueLock.acquire()
+        self.log.debug("findRemovingWaiting|Acquired lock to job queue.")
 
         # Get live jobs in time order, but then reverse when iterating.
         liveJobs = reversed(sorted(self.liveJobs.iteritems(), key = lambda (_, j): j.tm))
@@ -197,6 +199,7 @@ class JobQueue:
             self.makeDeadUnsafe(id, "Requested by findRemovingLabel")
 
         self.queueLock.release()
+        self.log.debug("findRemovingWaiting|Relased lock to job queue.")
         return id, job, status
 
     def delJob(self, id, deadjob):
@@ -210,6 +213,7 @@ class JobQueue:
             return self.makeDead(id, "Requested by operator")
         else:
             status = -1
+            self.log.debug("delJob| Acquiring lock to job queue.")
             self.queueLock.acquire()
             self.log.debug("delJob| Acquired lock to job queue.")
             if str(id) in self.deadJobs.keys():
@@ -225,15 +229,19 @@ class JobQueue:
             return status
 
     def isLive(self, id):
+        self.log.debug("isLive| Acquiring lock to job queue.")
         self.queueLock.acquire()
+        self.log.debug("isLive| Acquired lock to job queue.")
         isLive = self.liveJobs.get(id)
         self.queueLock.release()
+        self.log.debug("isLive| Released lock to job queue.")
         return isLive
 
     def get(self, id):
         """get - retrieve job from live queue
         @param id - the id of the job to retrieve
         """
+        self.log.debug("get| Acquiring lock to job queue.")
         self.queueLock.acquire()
         self.log.debug("get| Acquired lock to job queue.")
         if str(id) in self.liveJobs.keys():
@@ -248,7 +256,9 @@ class JobQueue:
         """getNextPendingJob - Returns ID of next pending job from queue.
         Called by JobManager when Config.REUSE_VMS==False
         """
+        self.log.debug("getNextPendingJob| Acquiring lock to job queue.")
         self.queueLock.acquire()
+        self.log.debug("getNextPendingJob| Acquired lock to job queue.")
         limitingKeys = defaultdict(int)
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
@@ -259,8 +269,10 @@ class JobQueue:
         for id, job in self.liveJobs.iteritems():
             if job.isNotAssigned() and (max_concurrent <= 0 or limitingKeys[job.limitingKey] < max_concurrent):
                 self.queueLock.release()
+                self.log.debug("getNextPendingJob| Released lock to job queue.")
                 return id
         self.queueLock.release()
+        self.log.debug("getNextPendingJob| Released lock to job queue.")
         return None
 
     # Create or enlarge a pool if there is no free vm to use and
@@ -279,7 +291,9 @@ class JobQueue:
         """getNextPendingJobReuse - Returns ID of next pending job and its VM.
         Called by JobManager when Config.REUSE_VMS==True
         """
+        self.log.debug("getNextPendingJobReuse| Acquiring lock to job queue.")
         self.queueLock.acquire()
+        self.log.debug("getNextPendingJobReuse| Acquired lock to job queue.")
         limitingKeys = defaultdict(int)
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
@@ -300,9 +314,11 @@ class JobQueue:
                 if vm:
                     self.log.info("getNextPendingJobReuse alloc vm %s to job %s" % (vm, id))
                     self.queueLock.release()
+                    self.log.debug("getNextPendingJobReuse| Released lock to job queue.")
                     return (id, vm)
 
         self.queueLock.release()
+        self.log.debug("getNextPendingJobReuse| Released lock to job queue.")
         return (None, None)
 
     # Returns the number of jobs that are ready to be assigned to a VM.
@@ -311,7 +327,9 @@ class JobQueue:
         max_concurrent = 0
         if hasattr(Config, 'MAX_CONCURRENT_JOBS') and Config.MAX_CONCURRENT_JOBS:
             max_concurrent = Config.MAX_CONCURRENT_JOBS
+        self.log.debug("numReadyJobs| Acquiring lock to job queue.")
         self.queueLock.acquire()
+        self.log.debug("numReadyJobs| Acquired lock to job queue.")
         limitingKeys = defaultdict(int)
         for id, job in self.liveJobs.iteritems():
             if not job.isNotAssigned():
@@ -320,11 +338,13 @@ class JobQueue:
             if job.isNotAssigned() and (max_concurrent <= 0 or limitingKeys[job.limitingKey] < max_concurrent):
                 count += 1
         self.queueLock.release()
+        self.log.debug("numReadyJobs| Released lock to job queue.")
         return count
 
     def assignJob(self, jobId):
         """ assignJob - marks a job to be assigned
         """
+        self.log.debug("assignJob| Acquiring lock to job queue.")
         self.queueLock.acquire()
         self.log.debug("assignJob| Acquired lock to job queue.")
         job = self.liveJobs.get(jobId)
@@ -339,6 +359,7 @@ class JobQueue:
     def unassignJob(self, jobId):
         """ assignJob - marks a job to be unassigned
         """
+        self.log.debug("unassignJob| Acquiring lock to job queue.")
         self.queueLock.acquire()
         self.log.debug("unassignJob| Acquired lock to job queue.")
         job = self.liveJobs.get(jobId)
@@ -357,6 +378,7 @@ class JobQueue:
         """ makeDead - move a job from live queue to dead queue
         """
         self.log.info("makeDead| Making dead job ID: " + str(id) + " " + reason)
+        self.log.debug("makeDead| Acquiring lock to job queue.")
         self.queueLock.acquire()
         self.log.debug("makeDead| Acquired lock to job queue.")
         status = self.makeDeadUnsafe(id, reason)
