@@ -128,7 +128,7 @@ class TangoREST:
                     continue
 
     def createTangoMachine(self, image, vmms=Config.VMMS_NAME,
-                           vmObj={'cores': 1, 'memory': 512}):
+            vmObj={'cores': 1, 'memory': 512, 'fallback_instance_type': 't2.nano'}):
         """ createTangoMachine - Creates a tango machine object from image
         """
         return TangoMachine(
@@ -137,6 +137,7 @@ class TangoREST:
             image="%s" % (image),
             cores=vmObj["cores"],
             memory=vmObj["memory"],
+            fallback_instance_type=vmObj["fallback_instance_type"],
             disk=None,
             network=None)
 
@@ -206,6 +207,7 @@ class TangoREST:
         vm['memory'] = tangoMachine.memory
         vm['vmms'] = tangoMachine.vmms
         vm['cores'] = tangoMachine.cores
+        vm['fallback_instance_type'] = tangoMachine.fallback_instance_type
         vm['disk'] = tangoMachine.disk
         vm['id'] = tangoMachine.id
         vm['name'] = tangoMachine.name

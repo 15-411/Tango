@@ -394,6 +394,7 @@ class TashiSSH:
             machine.name = instance.name
             machine.cores = instance.cores
             machine.memory = instance.memory
+            machine.fallback_instance_type = instance.fallback_instance_type
             machine.image = instance.disks[0].uri
             machine.vmms = 'tashiSSH'
             machines.append(machine)

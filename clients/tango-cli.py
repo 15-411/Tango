@@ -42,7 +42,7 @@ jobs_help = 'Obtain information of live jobs (deadJobs == 0) or dead jobs (deadJ
 parser.add_argument('-j', '--jobs', action='store_true', help=jobs_help)
 pool_help = 'Obtain information about a pool of VMs spawned from a specific image. Must specify key with -k. Modify defaults with --image (autograding_image).'
 parser.add_argument('--pool', action='store_true', help=pool_help)
-prealloc_help = 'Create a pool of instances spawned from a specific image. Must specify key with -k. Modify defaults with --image (autograding_image), --num (2), --vmms (localDocker), --cores (1), and --memory (512).'
+prealloc_help = 'Create a pool of instances spawned from a specific image. Must specify key with -k. Modify defaults with --image (autograding_image), --num (2), --vmms (localDocker), --cores (1), --memory (512), and --fallback-instance-type (t2.micro).'
 parser.add_argument('--prealloc', action='store_true', help=prealloc_help)
 scale_help = 'Update the scale parameters for the VM pool'
 parser.add_argument('--scale', action='store_true', help=scale_help)
@@ -79,6 +79,8 @@ parser.add_argument('--cores', default=1, type=int,
                     help='Number of cores to allocate on machine')
 parser.add_argument('--memory', default=512, type=int,
                     help='Amount of memory to allocate on machine')
+parser.add_argument('--fallback_instance_type', default='t2.micro',
+        help='Instance type to use if the core and memory constraints cannot be resolved.')
 parser.add_argument('--jobname', default='test_job',
                     help='Job name')
 parser.add_argument(
@@ -320,6 +322,7 @@ def tango_prealloc():
         vmObj['vmms'] = args.vmms
         vmObj['cores'] = args.cores
         vmObj['memory'] = args.memory
+        vmObj['fallback_instance_type'] = args.fallback_instance_type
 
         response = requests.post(
             'http://%s:%d/prealloc/%s/%s/%s/' %

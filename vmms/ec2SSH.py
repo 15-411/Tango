@@ -269,12 +269,18 @@ class Ec2SSH:
                 self.key_pair_name = self.keyPairName(vm.id, vm.name)
                 self.createKeyPair()
 
-            reservation = self.connection.run_instances(
-                ec2instance['ami'],
-                key_name=self.key_pair_name,
-                security_groups=[
-                    config.Config.DEFAULT_SECURITY_GROUP],
-                instance_type=ec2instance['instance_type'])
+            def reservationWithInstanceType(instance_type):
+                return self.connection.run_instances(
+                    ec2instance['ami'],
+                    key_name=self.key_pair_name,
+                    security_groups=[
+                        config.Config.DEFAULT_SECURITY_GROUP],
+                    instance_type=instance_type)
+
+            try:
+                reservation = reservationWithInstanceType(ec2instance['instance_type'])
+            except:
+                reservation = reservationWithInstanceType(vm.fallback_instance_type)
 
             # Sleep for a while to prevent random transient errors observed
             # when the instance is not available yet
