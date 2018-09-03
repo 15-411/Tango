@@ -363,7 +363,7 @@ class TangoREST:
                 result += output.read()
                 output.close()
                 return result
-            if os.path.exists(outFilePath):
+            if not inprogress and os.path.exists(outFilePath):
                 self.log.info("Output file (%s, %s, %s) found" %
                               (key, courselab, outputFile))
                 output = open(outFilePath)
