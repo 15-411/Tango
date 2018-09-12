@@ -92,7 +92,7 @@ class Config:
     MAX_INPUT_FILE_SIZE = 250 * 1024 * 1024 # 250MB
 
     # Maximum size for output file in bytes
-    MAX_OUTPUT_FILE_SIZE = 1000 * 1024
+    MAX_OUTPUT_FILE_SIZE = 2000 * 1024
 
     # VM ulimit values
     VM_ULIMIT_FILE_SIZE = 100 * 1024 * 1024
