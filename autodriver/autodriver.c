@@ -106,6 +106,9 @@ char * getTimestamp(time_t t) {
 /* Number of seconds to wait in between pkills */
 #define SHUTDOWN_GRACE_TIME 1
 
+/* List of files to chown to autograde but to preserve after running. */
+#define SHARED_AUTOGRADE_FILE_LIST "run_as_autograde.txt"
+
 /**
  * @brief A structure containing all of the user-configurable settings
  */
@@ -565,6 +568,39 @@ static void setup_dir(void) {
 }
 
 /**
+ * @brief Chowns the files listed in SHARED_AUTOGRADE_FILE_LIST to the given
+ * user.
+ */
+static int chown_autograde_files(uid_t uid, gid_t gid) {
+  FILE *file_list;
+  if (!(file_list = fopen(SHARED_AUTOGRADE_FILE_LIST, "r"))) {
+    MESSAGE("Shared autograde file list could not be opened; continuing...");
+    return 0;
+  }
+
+  char owner[100];
+  sprintf(owner, "%d:%d", uid, gid);
+
+  char *line = NULL;
+  size_t len = 0;
+  ssize_t read;
+  while ((read = getline(&line, &len, file_list)) != -1) {
+    // Remove new-line from end of string.
+    if (read > 0 && line[read-1] == '\n') {
+      line[read-1] = '\0';
+    }
+    char *chown_args[] = {"/bin/chown", "-R", "-h", owner, line, NULL};
+    if (call_program("/bin/chown", chown_args) != 0) {
+      ERROR_ERRNO("Chowning shared autograde directory");
+      return -1;
+    }
+  }
+  free(line);
+
+  return 0;
+}
+
+/**
  * @brief Dumps the output of the job, truncating if necessary
  */
 static void dump_output(void) {
@@ -641,6 +677,12 @@ static void cleanup(void) {
         }
         ret = kill_processes("-KILL");
         try++;
+    }
+
+    // Convert run_as_autograde files back to other user
+    if (chown_autograde_files(getuid(), getgid()) < 0) {
+      ERROR("Unable to return shared autograde files to ubuntu permissions.");
+      exit(EXIT_OSERROR);
     }
 
     // Delete all of the files owned by the user in ~user, /tmp, /var/tmp
@@ -914,6 +956,12 @@ int main(int argc, char **argv) {
 	    ERROR_ERRNO("Error chowning output file");
 	    exit(EXIT_OSERROR);
 	}
+    }
+
+    // While job is running, autograde files should be owned by autograde.
+    if (chown_autograde_files(args.user_info.pw_uid, args.user_info.pw_gid) < 0) {
+      ERROR_ERRNO("Error chowning shared autograde files");
+      exit(EXIT_OSERROR);
     }
 
     pid_t pid = fork();
