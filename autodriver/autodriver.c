@@ -480,18 +480,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     return 0;
 }
 
-/**
- * @brief Calls an external program
- *
- * Since this is a setuid binary, we shouldn't use system()
- *
- * @arg path Path to program to run
- * @arg argv NULL terminated array of arguments
- */
-static int call_program(char *path, char *argv[]) {
+static pid_t call_program_async(char *path, char *argv[]) {
     pid_t pid;
-    int status;
-
     if ((pid = fork()) < 0) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
@@ -501,6 +491,20 @@ static int call_program(char *path, char *argv[]) {
         ERROR_ERRNO("Unable to exec");
         exit(EXIT_OSERROR);
     }
+    return pid;
+}
+
+/**
+ * @brief Calls an external program
+ *
+ * Since this is a setuid binary, we shouldn't use system()
+ *
+ * @arg path Path to program to run
+ * @arg argv NULL terminated array of arguments
+ */
+static int call_program(char *path, char *argv[]) {
+    int status;
+    pid_t pid = call_program_async(path, argv);
 
     // TODO: Timeouts?
     waitpid(pid, &status, 0);
@@ -617,16 +621,26 @@ static void dump_output(void) {
     }
     outputFileSize = stat.st_size;
 
-    // Truncate output if we have to
     if (args.osize > 0 && stat.st_size > args.osize) {
         MESSAGE("Output size %lu > limit %u -- will elide in the middle",
                 stat.st_size, args.osize);
-        unsigned part_size = args.osize / 2;
-        if (dump_file(outfd, part_size, 0) < 0) {
-            exit(EXIT_OSERROR);
-        }
-        if (dump_file(outfd, part_size, stat.st_size - part_size) < 0) {
-            exit(EXIT_OSERROR);
+        // Streaming feedback: just print out the end of the output file.
+        // We've already printed the rest to stdout.
+        if (args.stream) {
+            unsigned end_size = min(1000, outputFileSize - args.osize); // 1 KB
+            if (dump_file(outfd, end_size, stat.st_size - end_size) < 0) {
+                ERROR("dump file for streaming feedback failed");
+                exit(EXIT_OSERROR);
+            }
+        // Otherwise, ellide the middle half.
+        } else {
+            unsigned part_size = args.osize / 2;
+            if (dump_file(outfd, part_size, 0) < 0) {
+                exit(EXIT_OSERROR);
+            }
+            if (dump_file(outfd, part_size, stat.st_size - part_size) < 0) {
+                exit(EXIT_OSERROR);
+            }
         }
     } else {
         if (dump_file(outfd, stat.st_size, 0) < 0) {
@@ -768,13 +782,47 @@ static int monitor_child(pid_t child) {
     MESSAGE("Also check end of output for potential errors");
 
     childFinished = 1;
-    if (!args.stream) dump_output();
+    dump_output();
     if (childTimedOut) {
       NL_MESSAGE("ERROR Job timed out");  // print error again at the end of output
     }
 
     cleanup();
     exit(killed ? EXIT_TIMEOUT : EXIT_SUCCESS);
+}
+
+pid_t tail(char *output_file) {
+    char *tail_args[] = {"tail", "/usr/bin/tail", "-f", output_file, NULL};
+    return call_program_async("/usr/bin/env", tail_args);
+}
+
+/**
+ * @brief Kill tail_pid when size of file exceeds output limit.
+ * Checks once every 5 seconds.
+ * Doesn't return (exits once truncated).
+ */
+void monitor_streaming_feedback(char *file, pid_t tail_pid) {
+    while (true) {
+        sleep(5);
+
+        struct stat buf;
+        if (stat(file, &buf) < 0) {
+            ERROR_ERRNO("Statting output file in monitor");
+            exit(EXIT_OSERROR);
+        }
+
+        // Kill tail process if we have exceeded file size
+        if (args.osize > 0 && buf.st_size > args.osize) {
+            if (kill(tail_pid, SIGINT) < 0) {
+                ERROR_ERRNO("Killing tail process");
+                exit(EXIT_OSERROR);
+            }
+
+            // We want to indicate in the output that progress is terminated.
+            fprintf(stdout, "---- TRUNCATING OUTPUT (too long!) ----");
+            exit(0);
+        }
+    }
 }
 
 /**
@@ -842,25 +890,41 @@ static void run_job(void) {
     }
     free(home);
 
-    if (!args.stream) {
-	// Redirect output
-	int fd = child_output_fd;
+    // Redirect output
+    int fd = child_output_fd;
 
-	if (dup2(fd, STDOUT_FILENO) < 0) {
-	    ERROR_ERRNO("Redirecting standard output");
-	    exit(EXIT_OSERROR);
-	}
+    // If streaming, tail output file.
+    // However, monitor output file for exceeding output size.
+    if (args.stream) {
+        pid_t tail_pid = tail(OUTPUT_FILE);
 
-	if (close(fd) < 0) {
-	    ERROR_ERRNO("Closing output file by child process");
-	    exit(EXIT_OSERROR);
-	}
+        // Monitor size of streaming feedback in another thread.
+        pid_t monitor_pid;
+        if ((monitor_pid = fork()) < 0) {
+            ERROR_ERRNO("Forking monitor");
+            exit(EXIT_OSERROR);
+        } else if (monitor_pid == 0) {
+            monitor_streaming_feedback(OUTPUT_FILE, tail_pid);
+            ERROR_ERRNO("monitor_streaming_feedback... returned?");
+            exit(EXIT_OSERROR);
+        }
+    }
+
+    if (dup2(fd, STDOUT_FILENO) < 0) {
+        ERROR_ERRNO("Redirecting standard output");
+        exit(EXIT_OSERROR);
+    }
+
+    if (close(fd) < 0) {
+        ERROR_ERRNO("Closing output file by child process");
+        exit(EXIT_OSERROR);
     }
 
     if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) {
         ERROR_ERRNO("Redirecting standard error");
         exit(EXIT_OSERROR);
     }
+
 
     // Switch into the folder
     if (chdir(args.directory) < 0) {
@@ -942,20 +1006,18 @@ int main(int argc, char **argv) {
     sigaddset(&sigset, SIGCHLD);
     sigprocmask(SIG_BLOCK, &sigset, NULL);
 
-    if (!args.stream) {
-	// output file is written by the child process while running the test.
-	// It's created here before forking, because the timestamp thread needs
-	// read access to it.
-	if ((child_output_fd = open(OUTPUT_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
+    // output file is written by the child process while running the test.
+    // It's created here before forking, because the timestamp thread needs
+    // read access to it.
+    if ((child_output_fd = open(OUTPUT_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
 		       S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
-	    ERROR_ERRNO("Creating output file");
-	    exit(EXIT_OSERROR);
-	}
-	// chown output file to user "autograde"
-	if (fchown(child_output_fd, args.user_info.pw_uid, args.user_info.pw_gid) < 0) {
-	    ERROR_ERRNO("Error chowning output file");
-	    exit(EXIT_OSERROR);
-	}
+        ERROR_ERRNO("Creating output file");
+        exit(EXIT_OSERROR);
+    }
+    // chown output file to user "autograde"
+    if (fchown(child_output_fd, args.user_info.pw_uid, args.user_info.pw_gid) < 0) {
+        ERROR_ERRNO("Error chowning output file");
+        exit(EXIT_OSERROR);
     }
 
     // While job is running, autograde files should be owned by autograde.
