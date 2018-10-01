@@ -642,7 +642,7 @@ static void dump_output(void) {
                 exit(EXIT_OSERROR);
             }
         }
-    } else {
+    } else if (!args.stream) {
         if (dump_file(outfd, stat.st_size, 0) < 0) {
             exit(EXIT_OSERROR);
         }
