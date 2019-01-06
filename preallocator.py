@@ -221,7 +221,6 @@ class Preallocator:
             machine = self.machines.get(vm.name)
             if vm.id not in machine[0]:
                 self.log.error("removeVM: %s NOT found in pool" % (vm.id, vm.name))
-                self.lock.release()
                 return
 
             self.log.info("removeVM: %s" % vm.id)
