@@ -121,14 +121,18 @@ class Ec2SSH:
 
         self.boto3connection = boto3.client("ec2", config.Config.EC2_REGION)
         self.boto3resource = boto3.resource("ec2", config.Config.EC2_REGION)
+        self.boto3pricing = boto3.client('pricing', config.Config.EC2_REGION)
+        self.reloadImg2ami()
 
+    # REQUIRES: self.boto3connection is live
+    # Query EC2 for all possible images, and stores the result in self.img2ami
+    def reloadImg2ami(self):
         # Use boto3 to read images.  Find the "Name" tag and use it as key to
         # build a map from "Name tag" to boto3's image structure.
         # The code is currently using boto 2 for most of the work and we don't
         # have the energy to upgrade it yet.  So boto and boto3 are used together.
 
-        client = boto3.client("ec2", config.Config.EC2_REGION)
-        images = client.describe_images(Owners=["self"])["Images"]
+        images = self.boto3connection.describe_images(Owners=["self"])["Images"]
         self.img2ami = {}
         for image in images:
             if "Tags" not in image:
@@ -175,6 +179,46 @@ class Ec2SSH:
     # VMMS helper methods
     #
 
+    # This is where we process the special value LATEST, if present.
+    # If it's present (and it should be there at most once), we choose
+    # the image with the lexicographically highest value where LATEST
+    # is present. For that, we use a regular expression.
+    #
+    # For example, if the name is:
+    #     this-is-cool-LATEST-wow
+    # and the options are:
+    #     this-is-cool-122-wow.img
+    #     this-is-cool-123-wow.img
+    #     this-is-cool-124.img
+    #     this-is-cool-124-wow.asjdifasjdj
+    # This function will choose this-is-cool-123.img
+    def getImageIfPresent(self, image):
+        latestCount = image.count("LATEST")
+        if latestCount == 0:
+            return self.img2ami.get(image + ".img")
+        # We don't know how to handle this.
+        if latestCount > 1:
+            return None
+
+        # Escape special characters in image name.
+        escaped = re.escape(image + ".img")
+        with_capture_group = escaped.replace("LATEST", "(?P<timestamp>\w+)")
+        pattern = re.compile(with_capture_group)
+
+        # Create a mapping from name to timestamp (the matched capture group)
+        timestamps = {}
+        for key in self.img2ami.keys():
+            match = pattern.match(key)
+            if match:
+                timestamps[key] = match.group('timestamp')
+
+        # Guard against the case when nothing was found
+        if timestamps:
+            return None
+
+        # Get the key corresponding to the maximum value
+        return self.img2ami[max(timestamps, key=timestamps.get)]
+
     def mbytes_to_gib_string(self, mbytes):
         if mbytes <= 512:
             return "0.5 GiB"
@@ -189,8 +233,7 @@ class Ec2SSH:
         """
         ec2instance = dict()
 
-        client = boto3.client('pricing', config.Config.EC2_REGION)
-        result = client.get_products(ServiceCode="AmazonEC2", Filters=[
+        result = self.boto3pricing.get_products(ServiceCode="AmazonEC2", Filters=[
             {"Type": "TERM_MATCH", "Field": "location", "Value": config.Config.EC2_REGION_LONG},
             {"Type": "TERM_MATCH", "Field": "termType", "Value": "OnDemand"},
             {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
@@ -205,7 +248,11 @@ class Ec2SSH:
             attrs = json.loads(result['PriceList'][0])['product']['attributes']
             ec2instance['instance_type'] = attrs['instanceType']
 
-        ec2instance['ami'] = self.img2ami[vm.name + ".img"]["ImageId"]
+        # You never know when a new image was just pushed.
+        if "LATEST" in vm.name:
+            self.reloadImg2ami()
+
+        ec2instance['ami'] = self.getImageIfPresent(vm.name)['Image']
         self.log.info("tangoMachineToEC2Instance: %s" % str(ec2instance))
 
         return ec2instance
@@ -585,8 +632,15 @@ class Ec2SSH:
                 return True
         return False
 
-    def getImages(self):
-        """ getImages - return a constant; actually use the ami specified in config
+    def isValidImage(self, img):
+        """ isValidImage - only invalidate the cache if the img key is not found.
         """
-        self.log.info("getImages: %s" % str(list(self.img2ami.keys())))
-        return list(self.img2ami.keys())
+        self.log.info("isValidImage: %s" % img)
+        if self.getImageIfPresent(img):
+            return True
+        else:
+            self.log.info("isValidImage: not currently found %s; reloading" % img)
+            self.log.info("isValidImage: (before reload) %s" % str(list(self.img2ami.keys())))
+            self.reloadImg2ami()
+            self.log.info("isValidImage: (after reload) %s" % str(list(self.img2ami.keys())))
+            return bool(self.getImageIfPresent(img))

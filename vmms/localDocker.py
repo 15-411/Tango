@@ -238,4 +238,5 @@ class LocalDocker:
             result.add(re.sub(r".*/([^/]*)", r"\1", row_l[0]))
         return list(result)
 
-
+    def isValidImage(self, img):
+        return img in self.getImages()

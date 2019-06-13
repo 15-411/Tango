@@ -414,3 +414,6 @@ class TashiSSH:
         .img extension
         """
         return [img for img in os.listdir(Config.TASHI_IMAGE_PATH) if img.endswith('.img')]
+
+    def isValidImage(self, img):
+        return img in self.getImages()
