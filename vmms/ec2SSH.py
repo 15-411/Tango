@@ -193,16 +193,20 @@ class Ec2SSH:
     #     this-is-cool-124-wow.asjdifasjdj
     # This function will choose this-is-cool-123.img
     def getImageIfPresent(self, image):
+        self.log.info('getImageIfPresent: %s' % image)
+        image = image if image.endswith(".img") else image + ".img"
         latestCount = image.count("LATEST")
         if latestCount == 0:
-            return self.img2ami.get(image + ".img")
+            self.log.info('getImageIfPresent: no LATEST appears; returning if image is in img2ami')
+            return self.img2ami.get(image)
         # We don't know how to handle this.
         if latestCount > 1:
             return None
 
         # Escape special characters in image name.
-        escaped = re.escape(image + ".img")
-        with_capture_group = escaped.replace("LATEST", "(?P<timestamp>\w+)")
+        escaped = re.escape(image)
+        with_capture_group = escaped.replace("LATEST", "(?P<timestamp>.+)")
+        self.log.info('getImageIfPresent: looking for image by regex %s' % with_capture_group)
         pattern = re.compile(with_capture_group)
 
         # Create a mapping from name to timestamp (the matched capture group)
@@ -212,8 +216,9 @@ class Ec2SSH:
             if match:
                 timestamps[key] = match.group('timestamp')
 
+        self.log.info('getImageIfPresent: choosing largest timestamp among %s' % str(timestamps))
         # Guard against the case when nothing was found
-        if timestamps:
+        if not timestamps:
             return None
 
         # Get the key corresponding to the maximum value
@@ -252,7 +257,7 @@ class Ec2SSH:
         if "LATEST" in vm.name:
             self.reloadImg2ami()
 
-        ec2instance['ami'] = self.getImageIfPresent(vm.name)['Image']
+        ec2instance['ami'] = self.getImageIfPresent(vm.name)['ImageId']
         self.log.info("tangoMachineToEC2Instance: %s" % str(ec2instance))
 
         return ec2instance
