@@ -488,7 +488,7 @@ class Ec2SSH:
     def kill(self, vm, runTimeout):
         self.log.debug("kill: Killing job on VM %s" % self.instanceName(vm.id, vm.name))
         # --wait flag means that this will block until all processes die.
-        return self.sshWithTimeout(vm, ["/usr/bin/killall", "--wait", "-INT", "autodriver"], runTimeout)
+        return self.sshWithTimeout(vm, ["sudo", "/usr/bin/killall", "--wait", "-SIGUSR2", "autodriver"], runTimeout)
 
     def runJob(self, vm, runTimeout, maxOutputFileSize, hdrFileName, bodyFileName):
         """ runJob - Run the make command on a VM using SSH and

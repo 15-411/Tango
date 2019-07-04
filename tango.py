@@ -121,7 +121,6 @@ class TangoServer:
           2. the job with the specified output file has finished running normally
           3. The job with the specified output file has been cancelled
           4. The job was found, and it's running, but cancellation failed.
-<<<<<<< HEAD
         In case 1, NOT_FOUND is returned.
                 2, ALREADY_COMPLETED is returned.
                 3, SUCCEEDED is returned.
@@ -129,19 +128,7 @@ class TangoServer:
         """
         self.log.debug("Received cancelJobWithPath(%s) request" % (outFilePath))
 
-        livejobs = []
-        deadjobs = []
-
-        for (i, j) in self.jobQueue.liveJobs.iteritems():
-            livejobs.append(j.outputFile)
-
-        for (i, j) in self.jobQueue.deadJobs.iteritems():
-            deadjobs.append(j.outputFile)
-
-        def hasThePathWeWant(job):
-           return job.outputFile == outFilePath
-
-        id, job, job_status = self.jobQueue.findRemovingWaiting(hasThePathWeWant)
+        id, job, job_status = self.jobQueue.findRemovingWaiting(outFilePath)
         self.log.debug("cancelJobWithPath: Found a job %s with status %s" %
           (job, job_status))
 
@@ -282,6 +269,15 @@ class TangoServer:
         self.preallocator.low_water_mark.set(low_water_mark)
         self.jobQueue.max_pool_size.set(max_pool_size)
         return 0
+
+    def runningTimeForOutputFile(self, outputFile):
+        self.log.debug("Received runningTimeForOutputFile(%s)" % outputFile)
+        liveJobTuple = self.jobQueue.liveJobs.getWrapped(outputFile)
+        if liveJobTuple:
+            (_, liveJob) = liveJobTuple
+            self.log.debug(str(liveJob.startTime))
+            return liveJob.runningTime()
+        return None
 
     #
     # Helper functions

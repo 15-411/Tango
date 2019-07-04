@@ -11,7 +11,7 @@ import threading, logging, time
 
 from datetime import datetime
 from collections import defaultdict
-from tangoObjects import TangoDictionary, TangoJob, TangoIntValue
+from tangoObjects import TangoDictionary, TangoJob, TangoIntValue, WrappingDictionary
 from config import Config
 
 #
@@ -32,8 +32,10 @@ from config import Config
 class JobQueue:
 
     def __init__(self, preallocator):
-        self.liveJobs = TangoDictionary("liveJobs")
-        self.deadJobs = TangoDictionary("deadJobs")
+        # Create two dictionaries that, for each job currently in the dictionary, also maintains a mapping
+        # from output file to the job. This allows easy, constant-time lookup for job based on output file.
+        self.liveJobs = WrappingDictionary("liveJobsWrapped", TangoDictionary("liveJobs"), lambda j: j.outputFile)
+        self.deadJobs = WrappingDictionary("deadJobsWrapped", TangoDictionary("deadJobs"), lambda j: j.outputFile)
         self.queueLock = threading.Lock()
         self.preallocator = preallocator
         self.log = logging.getLogger("JobQueue")
@@ -152,43 +154,27 @@ class JobQueue:
         RUNNING = 2
         DEAD = 3
 
-    def findRemovingWaiting(self, p):
-        """ findRemovingWaiting - find the first job that fulfills the predicate,
-        favoring the latest-created live job. If the found job is live but
-        unrun ("waiting"), move it from the live queue to the dead queue. Always
-        return the status of the found job.
+    def findRemovingWaiting(self, outputFile):
+        """ findRemovingWaiting - find the job with the given output file.
+        If the found job is live but unrun ("waiting"), move it from the live
+        queue to the dead queue. Always return the status of the found job.
         """
-        def firstSatisfying(jobCandidates, status):
-            goodCandidates = [(id, j) for (id, j) in jobCandidates if p(j)]
-            if len(goodCandidates) > 0:
-                id, job = goodCandidates[0]
-                return id, job, status
-            return None, None, JobQueue.JobStatus.NOT_FOUND
-
         self.log.debug("findRemovingWaiting|Acquiring lock to job queue.")
         with self.queueLock:
             self.log.debug("findRemovingWaiting|Acquired lock to job queue.")
 
-            # Get live jobs in time order, but then reverse when iterating.
-            liveJobs = reversed(sorted(self.liveJobs.iteritems(), key = lambda (_, j): j.tm))
-            liveJobs = list(liveJobs) # I hate python
+            liveJobResult = self.liveJobs.getWrapped(outputFile)
+            deadJobResult = self.deadJobs.getWrapped(outputFile)
 
-            def getWaitingJob():
-                liveWaitingJobs = [(id, j) for (id, j) in liveJobs if not j.assigned]
-                return firstSatisfying(liveWaitingJobs, JobQueue.JobStatus.WAITING)
-
-            def getRunningJob():
-                liveAssignedJobs = [(id, j) for (id, j) in liveJobs if j.assigned]
-                return firstSatisfying(liveAssignedJobs, JobQueue.JobStatus.RUNNING)
-
-            def getDeadJob():
-                return firstSatisfying(self.deadJobs.iteritems(), JobQueue.JobStatus.DEAD)
-
-            id, job, status = getWaitingJob()
-            if job == None:
-                id, job, status = getRunningJob()
-            if job == None:
-                id, job, status = getDeadJob()
+            if liveJobResult:
+                (id, job) = liveJobResult
+                status = JobQueue.JobStatus.RUNNING if job.assigned else JobQueue.JobStatus.WAITING
+            elif deadJobResult:
+                (id, job) = liveJobResult
+                status = JobQueue.JobStatus.DEAD
+            else:
+                (id, job) = (None, None)
+                status = JobQueue.JobStatus.NOT_FOUND
 
             if status == JobQueue.JobStatus.WAITING:
                 self.makeDeadUnsafe(id, "Requested by findRemovingLabel")

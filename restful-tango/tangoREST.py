@@ -355,8 +355,13 @@ class TangoREST:
             if inprogress and os.path.exists(hdrfile) and os.path.exists(bodyfile):
                 self.log.info("In-progress output files (%s, %s, %s, %s) found" %
                               (key, courselab, hdrfile, bodyfile))
+                runningTime = self.tango.runningTimeForOutputFile(outFilePath)
+                if runningTime:
+                    result = "Total running time: %s seconds\n\n" % runningTime.seconds
+                else:
+                    result = ""
                 output = open(hdrfile)
-                result = output.read()
+                result += output.read()
                 output.close()
                 result += "In-progress autodriver output from grading VM:\n\n"
                 output = open(bodyfile)

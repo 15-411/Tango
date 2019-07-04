@@ -144,7 +144,11 @@ class Worker(threading.Thread):
                 hdrs = {'Filename': outputFileName}
                 self.log.debug("Sending request to %s" % job.notifyURL)
                 response = requests.post(
-                    job.notifyURL, files=files, headers=hdrs, verify=False)
+                    job.notifyURL,
+                    files=files,
+                    headers=hdrs,
+                    data = { 'runningTime': job.runningTime() },
+                    verify=False)
                 self.log.info("Response from callback to %s:%s" %
                               (job.notifyURL, response.content))
                 fh.close()
@@ -250,8 +254,10 @@ class Worker(threading.Thread):
 
             # Run the job on the virtual machine
             self.jobLogAndTrace("running on VM", vm)
+            self.job.recordStartTime()
             ret["runjob"] = self.vmms.runJob(
                 vm, self.job.timeout, self.job.maxOutputFileSize, hdrfile, bodyfile)
+            self.job.recordEndTime()
             self.jobLogAndTrace("running on VM", vm, ret["runjob"])
 
             # handle failure(s) of runjob.
