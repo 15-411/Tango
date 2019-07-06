@@ -669,14 +669,15 @@ static void cleanup(void) {
     }
 }
 
+pid_t global_pid;
 /**
- * @brief Signal handler--compatible signal declaration.
+ * @brief Pkills autograding process.
  */
-static void cleanup_hndlr(int sig) {
+static void cancel_hndlr(int sig) {
     (void) sig; // This puts sig into the void.
-    MESSAGE("Received cancellation request from user.");
-    cleanup();
-    exit(0); // Bye
+    char buf[] = "Received cancel request from user. Killing child...\n";
+    write(STDERR_FILENO, buf, strlen(buf));
+    kill(global_pid, SIGKILL);
 }
 
 /**
@@ -711,14 +712,21 @@ static int monitor_child(pid_t child) {
         sigset_t sigset;
         sigemptyset(&sigset);
         sigaddset(&sigset, SIGCHLD);
+        sigaddset(&sigset, SIGUSR2); // cancellation
 
-        if (sigtimedwait(&sigset, NULL, &timeout) < 0) {
-            // Child timed out
-            ERROR("Job timed out after %d seconds", args.timeout);
-            assert(errno == EAGAIN);
-            kill(child, SIGKILL);
-            killed = 1;
-            childTimedOut = 1;
+        int sig_num = sigtimedwait(&sigset, NULL, &timeout);
+        if (sig_num < 0) {
+           // Child timed out
+           ERROR("Job timed out after %d seconds", args.timeout);
+           assert(errno == EAGAIN);
+           kill(child, SIGKILL);
+           killed = 1;
+           childTimedOut = 1;
+        }
+
+        // We need to manually run signal handler, since it was blocked.
+        if (sig_num == SIGUSR2) {
+            cancel_hndlr(sig_num);
         }
     }
 
@@ -771,7 +779,7 @@ void monitor_streaming_feedback(char *file, pid_t tail_pid) {
 
         // Kill tail process if we have exceeded file size
         if (args.osize > 0 && buf.st_size > args.osize) {
-            if (kill(tail_pid, SIGINT) < 0) {
+            if (kill(tail_pid, SIGUSR2) < 0) {
                 ERROR_ERRNO("Killing tail process");
                 exit(EXIT_OSERROR);
             }
@@ -985,9 +993,11 @@ int main(int argc, char **argv) {
     } else if (pid == 0) {
         run_job();
     } else {
+        // store pid in global field for signal handler
+        global_pid = pid;
         // On job cancellation, Tango sends SIGINT to the autograding process.
         // What better to do than call cleanup?
-        signal(SIGINT, cleanup_hndlr);
+        signal(SIGUSR2, cancel_hndlr);
 
         if (!args.stream && close(child_output_fd) < 0) {
             ERROR_ERRNO("Closing output file by parent process");
