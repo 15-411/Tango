@@ -505,7 +505,7 @@ class TangoREST:
             elif ret == CancellationStatus.FAILED:
                 self.log.error("The job found with output file %s could not be cancelled" % outputFile)
                 return self.status.job_cancellation_failed
-            self.log.info("Successfully cancelled job with output file %s" % outputFile)
+            self.log.info("Successfully registered request to cancel job with output file %s" % outputFile)
             return self.status.job_cancelled
         else:
             self.log.info("Key not recognized: %s" % key)

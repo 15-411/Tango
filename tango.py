@@ -159,9 +159,8 @@ class TangoServer:
 
         vm = job.vm
         for _ in xrange(0, Config.CANCEL_RETRIES):
-            # Uh, wait a few seconds, I guess.
-            self.preallocator.vmms[vm.vmms].kill(vm, Config.CANCEL_TIMEOUT)
-            if not self.jobQueue.isLive(id):
+            # Returns 0 on success.
+            if self.preallocator.vmms[vm.vmms].kill(vm) == 0:
               return CancellationStatus.SUCCEEDED
 
         return CancellationStatus.FAILED
