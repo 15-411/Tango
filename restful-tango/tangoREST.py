@@ -355,8 +355,13 @@ class TangoREST:
             if inprogress and os.path.exists(hdrfile) and os.path.exists(bodyfile):
                 self.log.info("In-progress output files (%s, %s, %s, %s) found" %
                               (key, courselab, hdrfile, bodyfile))
+                runningTime = self.tango.runningTimeForOutputFile(outFilePath)
+                if runningTime:
+                    result = "Total running time: %s seconds\n\n" % runningTime.seconds
+                else:
+                    result = ""
                 output = open(hdrfile)
-                result = output.read()
+                result += output.read()
                 output.close()
                 result += "In-progress autodriver output from grading VM:\n\n"
                 output = open(bodyfile)
@@ -500,7 +505,7 @@ class TangoREST:
             elif ret == CancellationStatus.FAILED:
                 self.log.error("The job found with output file %s could not be cancelled" % outputFile)
                 return self.status.job_cancellation_failed
-            self.log.info("Successfully cancelled job with output file %s" % outputFile)
+            self.log.info("Successfully registered request to cancel job with output file %s" % outputFile)
             return self.status.job_cancelled
         else:
             self.log.info("Key not recognized: %s" % key)

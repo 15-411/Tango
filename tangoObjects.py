@@ -6,7 +6,7 @@ import redis
 import pickle
 import Queue
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import Config
 
 redisConnection = None
@@ -105,6 +105,9 @@ class TangoJob():
         self.accessKey = accessKey
         self.tm = datetime.now()
 
+        self.startTime = None
+        self.endTime = None
+
     def makeAssigned(self):
         self.syncRemote()
         self.assigned = True
@@ -135,6 +138,32 @@ class TangoJob():
             self._remoteLocation = dict_hash + ":" + str(new_id)
             self.updateRemote()
 
+    # Record in the job object that now is the time the job started.
+    def recordStartTime(self):
+        self.syncRemote()
+        self.startTime = datetime.now()
+        self.updateRemote()
+
+    # Record in the job object that now is the time the job completed.
+    def recordEndTime(self):
+        self.syncRemote()
+        self.endTime = datetime.now()
+        self.updateRemote()
+
+    # Calculate the running time of the job.
+    # If the job hasn't started (as determined by the presence of the startTime
+    #   field), then return the timedelta value corresponding to 0.
+    # If the job has started but not finished (as determined by the presence of
+    #   the endTime field), then return the timedelta between startTime and now.
+    # If the job has finished, then return the timedelta between startTime and
+    #   endTime.
+    def runningTime(self):
+        if self.startTime == None:
+            return timedelta()
+        if self.endTime == None:
+            return datetime.now() - self.startTime
+        return self.endTime - self.startTime
+
     def syncRemote(self):
         if Config.USE_REDIS and self._remoteLocation is not None:
             dict_hash = self._remoteLocation.split(":")[0]
@@ -162,7 +191,8 @@ class TangoJob():
         self.timeout = other_job.timeout
         self.trace = other_job.trace
         self.maxOutputFileSize = other_job.maxOutputFileSize
-
+        self.startTime = other_job.startTime
+        self.endTime = other_job.endTime
 
 def TangoIntValue(object_name, obj):
     if Config.USE_REDIS:
@@ -224,6 +254,7 @@ class TangoRemoteQueue():
         """The default connection parameters are: host='localhost', port=6379, db=0"""
         self.__db = getRedisConnection()
         self.key = '%s:%s' % (namespace, name)
+        self.name = name
 
     # for debugging.  return a readable string representation
     def dump(self):
@@ -291,6 +322,45 @@ def TangoDictionary(object_name):
     else:
         return TangoNativeDictionary()
 
+# Dictionary that maintains a separate dictionary D.
+# Suppose the original dictionary contains mappings k --> v.
+# Then a wrapping dictionary D will still contain mappings k --> v,
+# but also maintains a side dictionary D' with mappings f(v) --> (k, v).
+# This dictionary D' is stored as the "wrapped" field.
+# f should not change over the relevant lifetime of the value.
+class WrappingDictionary():
+    def __init__(self, object_name, dictionary, f):
+        self.wrapped = TangoDictionary(object_name)
+        self.f = f
+        self.dictionary = dictionary
+
+    def set(self, id, obj):
+        self.wrapped.set(self.f(obj), id)
+        return self.dictionary.set(id, obj)
+
+    def get(self, id):
+        return self.dictionary.get(id)
+
+    def getWrapped(self, k):
+        id = self.wrapped.get(k)
+        return (id, self.dictionary.get(id))
+
+    def keys(self):
+        return self.dictionary.keys()
+
+    def values(self):
+        return self.dictionary.values()
+
+    def delete(self, id):
+        self.wrapped.delete(self.f(self.dictionary.get(id)))
+        return self.dictionary.delete(id)
+
+    def _clean(self):
+        self.wrapped._clean()
+        return self.dictionary._clean()
+
+    def iteritems(self):
+        return self.dictionary.iteritems();
 
 class TangoRemoteDictionary():
 

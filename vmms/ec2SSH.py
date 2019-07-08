@@ -480,15 +480,21 @@ class Ec2SSH:
 
         return 0
 
+    def sshCommand(self, vm, runcmd):
+        domain_name = self.domainName(vm)
+        account = "%s@%s" % (config.Config.EC2_USER_NAME, domain_name)
+        return ["ssh"] + self.ssh_flags + [account] + runcmd
+
     def sshWithTimeout(self, vm, runcmd, runTimeout, stdout=None, stderr=None):
         domain_name = self.domainName(vm)
         account = "%s@%s" % (config.Config.EC2_USER_NAME, domain_name)
-        return timeout(["ssh"] + self.ssh_flags + [account] + runcmd, runTimeout, stdout=stdout, stderr=stderr)
+        return timeout(self.sshCommand(vm, runcmd), runTimeout, stdout=stdout, stderr=stderr)
 
-    def kill(self, vm, runTimeout):
+    def kill(self, vm):
         self.log.debug("kill: Killing job on VM %s" % self.instanceName(vm.id, vm.name))
-        # --wait flag means that this will block until all processes die.
-        return self.sshWithTimeout(vm, ["/usr/bin/killall", "--wait", "-INT", "autodriver"], runTimeout)
+        cmd = self.sshCommand(vm, ["sudo", "/usr/bin/killall", "-SIGUSR2", "autodriver"])
+        self.log.debug("kill: Running command %s." % str(cmd))
+        return subprocess.Popen(cmd).wait()
 
     def runJob(self, vm, runTimeout, maxOutputFileSize, hdrFileName, bodyFileName):
         """ runJob - Run the make command on a VM using SSH and
