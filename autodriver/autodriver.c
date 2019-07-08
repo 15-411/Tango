@@ -669,15 +669,14 @@ static void cleanup(void) {
     }
 }
 
-pid_t global_pid;
 /**
  * @brief Pkills autograding process.
  */
 static void cancel_hndlr(int sig) {
     (void) sig; // This puts sig into the void.
-    char buf[] = "Received cancel request from user. Killing child...\n";
+    char buf[] = "Received cancel request from user. Killing children...\n";
     write(STDERR_FILENO, buf, strlen(buf));
-    kill(global_pid, SIGKILL);
+    kill(-getpgid(0), SIGKILL);
 }
 
 /**
@@ -712,7 +711,7 @@ static int monitor_child(pid_t child) {
         sigset_t sigset;
         sigemptyset(&sigset);
         sigaddset(&sigset, SIGCHLD);
-        sigaddset(&sigset, SIGUSR2); // cancellation
+        sigaddset(&sigset, SIGINT); // cancellation
 
         int sig_num = sigtimedwait(&sigset, NULL, &timeout);
         if (sig_num < 0) {
@@ -725,7 +724,7 @@ static int monitor_child(pid_t child) {
         }
 
         // We need to manually run signal handler, since it was blocked.
-        if (sig_num == SIGUSR2) {
+        if (sig_num == SIGINT) {
             cancel_hndlr(sig_num);
         }
     }
@@ -905,6 +904,9 @@ static void run_job(void) {
 }
 
 int main(int argc, char **argv) {
+    // On job cancellation, Tango sends SIGINT to the autograding process.
+    signal(SIGINT, cancel_hndlr);
+
     // Argument defaults
     args.nproc = 0;
     args.fsize = 0;
@@ -993,12 +995,6 @@ int main(int argc, char **argv) {
     } else if (pid == 0) {
         run_job();
     } else {
-        // store pid in global field for signal handler
-        global_pid = pid;
-        // On job cancellation, Tango sends SIGINT to the autograding process.
-        // What better to do than call cleanup?
-        signal(SIGUSR2, cancel_hndlr);
-
         if (!args.stream && close(child_output_fd) < 0) {
             ERROR_ERRNO("Closing output file by parent process");
             // don't quit for this type of error

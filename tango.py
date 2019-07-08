@@ -40,6 +40,8 @@ from datetime import datetime
 from preallocator import Preallocator
 from jobQueue import JobQueue
 from jobManager import JobManager
+import requests
+import threading
 
 from tangoObjects import TangoJob
 from config import Config
@@ -142,6 +144,20 @@ class TangoServer:
            assert job_status == JobQueue.JobStatus.WAITING
            # In this case, findRemovingLive has moved the live job to the dead
            # queue, and we have nothing to worry about.
+           # Let's notify autolab that the job is done.
+           if job.notifyURL:
+               outputFileName = job.outputFile.split("/")[-1]  # get filename from path
+               files = {'file': unicode('Job was cancelled before it started.')}
+               hdrs = {'Filename': outputFileName}
+               self.log.debug("Sending request to %s" % job.notifyURL)
+               def worker():
+                   requests.post(
+                       job.notifyURL,
+                       files=files,
+                       headers=hdrs,
+                       data = { 'runningTime': 0 },
+                       verify=False)
+               threading.Thread(target=worker).start()
            return CancellationStatus.SUCCEEDED
 
     def killUntilJobComplete(self, id, job):
