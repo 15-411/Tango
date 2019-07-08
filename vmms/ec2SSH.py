@@ -492,9 +492,7 @@ class Ec2SSH:
 
     def kill(self, vm):
         self.log.debug("kill: Killing job on VM %s" % self.instanceName(vm.id, vm.name))
-        cmd = self.sshCommand(vm, ["sudo", "/usr/bin/killall", "-SIGUSR2", "autodriver"])
-        self.log.debug("kill: Running command %s." % str(cmd))
-        return subprocess.Popen(cmd).wait()
+        return subprocess.Popen(self.sshCommand(vm, ["sudo", "/usr/bin/killall", "-SIGINT", "autodriver"])).wait()
 
     def runJob(self, vm, runTimeout, maxOutputFileSize, hdrFileName, bodyFileName):
         """ runJob - Run the make command on a VM using SSH and

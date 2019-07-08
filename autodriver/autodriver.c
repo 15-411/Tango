@@ -676,7 +676,7 @@ static void cancel_hndlr(int sig) {
     (void) sig; // This puts sig into the void.
     char buf[] = "Received cancel request from user. Killing children...\n";
     write(STDERR_FILENO, buf, strlen(buf));
-    kill(-getpid(), SIGKILL);
+    kill(-getpgid(0), SIGKILL);
 }
 
 /**
