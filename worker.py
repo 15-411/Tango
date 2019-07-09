@@ -147,7 +147,7 @@ class Worker(threading.Thread):
                     job.notifyURL,
                     files=files,
                     headers=hdrs,
-                    data = { 'runningTime': job.runningTime() },
+                    data = { 'runningTimeSeconds': job.runningTime().seconds },
                     verify=False)
                 self.log.info("Response from callback to %s:%s" %
                               (job.notifyURL, response.content))

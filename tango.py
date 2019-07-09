@@ -155,7 +155,7 @@ class TangoServer:
                        job.notifyURL,
                        files=files,
                        headers=hdrs,
-                       data = { 'runningTime': 0 },
+                       data = { 'runningTimeSeconds': 0 },
                        verify=False)
                threading.Thread(target=worker).start()
            return CancellationStatus.SUCCEEDED
