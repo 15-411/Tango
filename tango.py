@@ -177,7 +177,7 @@ class TangoServer:
         for _ in xrange(0, Config.CANCEL_RETRIES):
             # Returns 0 on success.
             if self.preallocator.vmms[vm.vmms].kill(vm) == 0:
-              return CancellationStatus.SUCCEEDED
+                return CancellationStatus.SUCCEEDED
 
         return CancellationStatus.FAILED
 

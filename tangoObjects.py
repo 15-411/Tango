@@ -343,7 +343,11 @@ class WrappingDictionary():
 
     def getWrapped(self, k):
         id = self.wrapped.get(k)
-        return (id, self.dictionary.get(id))
+        val = self.dictionary.get(id)
+        if id is None or val is None:
+            return None
+        else:
+            return (id, val)
 
     def keys(self):
         return self.dictionary.keys()

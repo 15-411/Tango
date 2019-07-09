@@ -170,7 +170,7 @@ class JobQueue:
                 (id, job) = liveJobResult
                 status = JobQueue.JobStatus.WAITING if job.isNotAssigned() else JobQueue.JobStatus.RUNNING
             elif deadJobResult:
-                (id, job) = liveJobResult
+                (id, job) = deadJobResult
                 status = JobQueue.JobStatus.DEAD
             else:
                 (id, job) = (None, None)

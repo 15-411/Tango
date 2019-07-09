@@ -79,6 +79,7 @@ class JobManager:
                         jobStr = ', '.join("%s: %s" % item for item in job.__dict__.items())
                         self.log.info("_manage after getNextPendingJobReuse %s" % jobStr)
                     else:
+                        self.preallocator.freeVM(vm, self.jobQueue)
                         self.log.info("_manage after getNextPendingJobReuse %s %s" % (id, vm))
 
                 if job is not None:
