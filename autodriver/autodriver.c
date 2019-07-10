@@ -468,8 +468,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
         args.timezone = arg;
         break;
     case 's':
-	args.stream = true;
-	break;
+        args.stream = true;
+        break;
     case ARGP_KEY_ARG:
         switch (state->arg_num) {
         case 0:
@@ -536,13 +536,13 @@ static void setup_dir(void) {
     char *make_args[] = {"make", "setup", NULL};
     bool should_abort = false;
     if (call_program("/usr/bin/make", make_args) != 0) {
-	ERROR("Running setup");
-	should_abort = true;
-	char *make_args2[] = {"make", "clean", NULL};
-	if (call_program("/usr/bin/make", make_args2) != 0) {
-	    ERROR("Running make clean");
-	    exit(EXIT_OSERROR);
-	}
+        ERROR("Running setup");
+        should_abort = true;
+        char *make_args2[] = {"make", "clean", NULL};
+        if (call_program("/usr/bin/make", make_args2) != 0) {
+            ERROR("Running make clean");
+            exit(EXIT_OSERROR);
+        }
     }
 
     if (chdir("..") < 0) {
@@ -551,12 +551,12 @@ static void setup_dir(void) {
     }
 
     if (should_abort) {
-	char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
-	if (call_program("/bin/rm", rm_args) != 0) {
-	    ERROR("Removing directory");
-	    exit(EXIT_OSERROR);
-	}
-	exit(0);
+        char *rm_args[] = {"/bin/rm", "-rf", args.directory, NULL};
+        if (call_program("/bin/rm", rm_args) != 0) {
+            ERROR("Removing directory");
+            exit(EXIT_OSERROR);
+        }
+        exit(0);
     }
 
     // Move the directory over to the user we're running as's home directory
@@ -965,8 +965,8 @@ int main(int argc, char **argv) {
             "Interval (seconds) for placing timestamps in user output file", 0},
         {"timezone", 'z', "timezone", 0,
             "Timezone setting. Default is UTC", 0},
-	{"stream", 's', "stream", OPTION_ARG_OPTIONAL,
-	    "Stream the autograder output to stdout instead of dumping it all at once", 0},
+        {"stream", 's', "stream", OPTION_ARG_OPTIONAL,
+            "Stream the autograder output to stdout instead of dumping it all at once", 0},
         {0, 0, 0, 0, 0, 0}
     };
 
@@ -994,7 +994,7 @@ int main(int argc, char **argv) {
     // It's created here before forking, because the timestamp thread needs
     // read access to it.
     if ((child_output_fd = open(OUTPUT_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
-		       S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
+                       S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
         ERROR_ERRNO("Creating output file");
         exit(EXIT_OSERROR);
     }
