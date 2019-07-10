@@ -354,6 +354,21 @@ void insertTimestamp(char *buffer,
   *currentStampInOut = currentStamp;
 }
 
+sigset_t sigint_set;
+sigset_t sigchld_sigint_set;
+/**
+ * @brief sets up sigchld_set and sigchld_sigint_set
+ */
+void setup_sigsets() {
+    sigemptyset(&sigint_set);
+    sigemptyset(&sigchld_sigint_set);
+
+    sigaddset(&sigint_set, SIGINT);
+
+    sigaddset(&sigchld_sigint_set, SIGCHLD);
+    sigaddset(&sigchld_sigint_set, SIGINT);
+}
+
 /**
  * @brief Dumps a specified number of bytes from a file to standard out
  *
@@ -669,14 +684,17 @@ static void cleanup(void) {
     }
 }
 
+pid_t child_pid = 0;
 /**
- * @brief Pkills autograding process.
+ * @brief Kills child processes.
  */
 static void cancel_hndlr(int sig) {
-    (void) sig; // This puts sig into the void.
+    (void) sig;
     char buf[] = "Received cancel request from user. Killing children...\n";
     write(STDERR_FILENO, buf, strlen(buf));
-    kill(-getpgid(0), SIGKILL);
+    kill(child_pid, SIGINT);
+    sleep(SHUTDOWN_GRACE_TIME);
+    kill(child_pid, SIGKILL);
 }
 
 /**
@@ -708,12 +726,7 @@ static int monitor_child(pid_t child) {
         timeout.tv_sec = args.timeout;
         timeout.tv_nsec = 0;
 
-        sigset_t sigset;
-        sigemptyset(&sigset);
-        sigaddset(&sigset, SIGCHLD);
-        sigaddset(&sigset, SIGINT); // cancellation
-
-        int sig_num = sigtimedwait(&sigset, NULL, &timeout);
+        int sig_num = sigtimedwait(&sigchld_sigint_set, NULL, &timeout);
         if (sig_num < 0) {
            // Child timed out
            ERROR("Job timed out after %d seconds", args.timeout);
@@ -729,6 +742,7 @@ static int monitor_child(pid_t child) {
         }
     }
 
+    sigprocmask(SIG_UNBLOCK, &sigint_set, NULL);
     if (waitpid(child, &status, 0) < 0) {
         ERROR_ERRNO("Reaping child");
         exit(EXIT_OSERROR);
@@ -801,10 +815,7 @@ void monitor_streaming_feedback(char *file, pid_t tail_pid) {
  */
 static void run_job(void) {
     // Unblock signals
-    sigset_t sigset;
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGCHLD);
-    sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+    sigprocmask(SIG_UNBLOCK, &sigchld_sigint_set, NULL);
 
     // Set ulimits
     if (args.nproc != 0) {
@@ -863,12 +874,19 @@ static void run_job(void) {
     if (args.stream) {
         pid_t tail_pid = tail(OUTPUT_FILE);
 
+        // We want SIG_DFL behavior for SIGINT in the forked monitor.
+        sigprocmask(SIG_BLOCK, &sigint_set, NULL);
+
         // Monitor size of streaming feedback in another thread.
         pid_t monitor_pid;
         if ((monitor_pid = fork()) < 0) {
             ERROR_ERRNO("Forking monitor");
             exit(EXIT_OSERROR);
         } else if (monitor_pid == 0) {
+            // set SIG_DFL to make this process exit on interrupt
+            signal(SIGINT, SIG_DFL);
+            sigprocmask(SIG_UNBLOCK, &sigint_set, NULL);
+
             monitor_streaming_feedback(OUTPUT_FILE, tail_pid);
             ERROR_ERRNO("monitor_streaming_feedback... returned?");
             exit(EXIT_OSERROR);
@@ -904,6 +922,7 @@ static void run_job(void) {
 }
 
 int main(int argc, char **argv) {
+    setup_sigsets();
     // On job cancellation, Tango sends SIGINT to the autograding process.
     signal(SIGINT, cancel_hndlr);
 
@@ -968,11 +987,8 @@ int main(int argc, char **argv) {
 
     setup_dir();
 
-    // Block SIGCHLD to make sure monitor_child recieves it.
-    sigset_t sigset;
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGCHLD);
-    sigprocmask(SIG_BLOCK, &sigset, NULL);
+    // Block SIGCHLD and SIGINT to make sure monitor_child receives it.
+    sigprocmask(SIG_BLOCK, &sigchld_sigint_set, NULL);
 
     // output file is written by the child process while running the test.
     // It's created here before forking, because the timestamp thread needs
@@ -993,6 +1009,7 @@ int main(int argc, char **argv) {
         ERROR_ERRNO("Unable to fork");
         exit(EXIT_OSERROR);
     } else if (pid == 0) {
+        signal(SIGINT, SIG_DFL); // remove custom SIGINT handling
         run_job();
     } else {
         if (!args.stream && close(child_output_fd) < 0) {
@@ -1000,8 +1017,10 @@ int main(int argc, char **argv) {
             // don't quit for this type of error
         }
 
+        child_pid = pid; // for signal handler
         monitor_child(pid);
     }
 
     return 0;
 }
+
