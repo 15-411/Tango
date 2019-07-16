@@ -245,6 +245,7 @@ class Ec2SSH:
             {"Type": "TERM_MATCH", "Field": "storage", "Value": "EBS only"},
             {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
             {"Type": "TERM_MATCH", "Field": "memory", "Value": self.mbytes_to_gib_string(vm.memory)},
+            {"Type": "TERM_MATCH", "Field": "ecu", "Value": '9' }, # DO NOT MERGE; this is specific to compilers to make sure we get r5.large, for which we have a higher instance limit in AWS
             {"Type": "TERM_MATCH", "Field": "vcpu", "Value": str(vm.cores)}
         ])
         if not result or len(result['PriceList']) == 0:
