@@ -170,7 +170,8 @@ class TangoJob():
             key = self._remoteLocation.split(":")[1]
             dictionary = TangoDictionary(dict_hash)
             temp_job = dictionary.get(key)
-            self.updateSelf(temp_job)
+            if temp_job:
+                self.updateSelf(temp_job)
 
     def updateRemote(self):
         if Config.USE_REDIS and self._remoteLocation is not None:
